@@ -1,5 +1,5 @@
 {
-  "name": "blogger-seo-platform",
+  "name": "blogsmith",
   "version": "0.1.0",
   "description": "Smart SEO editor + one-click publisher for free .blogspot.com blogs (Blogger API v3)",
   "private": true,

@@ -175,6 +175,39 @@ function analyzePost({ title = '', html = '', metaDescription = '', focusKeyword
   add('external-links', 'External links', links.external >= 1 ? 'pass' : 'warn',
     links.external >= 1 ? `${links.external} external link(s) to supporting sources.` : 'Link out to at least one authoritative source.');
 
+  // --- AI search (GEO) checks: will AI answers pick this post up? -------------
+  // (FAQ/HowTo rich-result schema deliberately NOT generated: Google retired those
+  // rich results for most sites in 2023-2024; answer-first structure is what remains.)
+  const firstParaText = stripHtml((html.match(/<p[^>]*>[\s\S]*?<\/p>/i) || [''])[0]);
+  const firstParaWords = words(firstParaText).length;
+  const titleTerms = keywordTokens(title);
+  const firstParaLower = firstParaText.toLowerCase();
+  const answerFirst = firstParaWords >= 25 && firstParaWords <= 90
+    && (titleTerms.length === 0 || titleTerms.some((t) => firstParaLower.includes(t)));
+  add('geo-answer-first', 'AI search: direct answer up top', !wordCount ? 'fail' : answerFirst ? 'pass' : 'warn',
+    !wordCount ? 'No body text yet.'
+      : answerFirst ? 'The opening paragraph is a self-contained 25-90 word answer AI engines can quote.'
+      : `Open with a self-contained ${firstParaWords < 25 ? 'longer' : 'shorter'} answer (${firstParaWords} words now; aim for 25-90, mentioning the topic) - AI answers quote the first clear answer they find.`);
+
+  const QUESTION_STARTS = ['how', 'what', 'why', 'when', 'where', 'which', 'who', 'can', 'is', 'are', 'does', 'should'];
+  const questionHeadings = headingsAll.filter((h) => {
+    const hw = words(h);
+    return h.trim().endsWith('?') || (hw.length && QUESTION_STARTS.includes(hw[0]));
+  });
+  add('geo-question-headings', 'AI search: question-style headings', questionHeadings.length >= 1 ? 'pass' : 'warn',
+    questionHeadings.length >= 1
+      ? `${questionHeadings.length} heading(s) phrased the way people ask AI engines.`
+      : 'Phrase at least one H2/H3 as a real question (e.g. "How do I ...?") - AI engines match questions to answers.');
+
+  const year = new Date().getFullYear();
+  const textLower = text.toLowerCase();
+  const hasFreshness = textLower.includes(String(year)) || textLower.includes(String(year - 1))
+    || /\b(updated|latest|new edition|revised)\b/i.test(text);
+  add('geo-freshness', 'AI search: freshness signal', !wordCount ? 'fail' : hasFreshness ? 'pass' : 'warn',
+    !wordCount ? 'No body text yet.'
+      : hasFreshness ? 'Freshness signal present (year or "updated") - AI engines and readers both favor current content.'
+      : `Mention the current year (${year}) or an "updated" note - undated content loses AI citations and clicks.`);
+
   // 8. Readability
   const fr = flesch(text);
   add('readability', 'Readability', !wordCount ? 'fail' : fr >= 60 ? 'pass' : fr >= 40 ? 'warn' : 'fail',

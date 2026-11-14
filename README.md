@@ -1,4 +1,4 @@
-# BloggerSEO — Smart SEO Editor & Automated Publishing Platform for Blogger
+# Blogsmith — the SEO studio for Blogger
 
 A web platform that gives free `.blogspot.com` creators the on-page SEO tooling Blogger
 lacks: a distraction-free editor with a **real-time SEO checklist**, **automatic image
@@ -68,7 +68,7 @@ composed payload is stored and viewable in the editor via **View payload**.
 | --- | --- |
 | Google OAuth 2.0 login, Blogger API v3 + Search Console scopes | `server/blogger/googleClient.js` (plain `fetch`, offline-refresh tokens, auto refresh) |
 | Clean rich-text editor | TipTap v3 (H2/H3/H4, lists, quotes, links, images), bundled with esbuild — no runtime CDN |
-| Real-time on-page SEO checklist | `server/seo/analyzer.js` — title length, focus-keyword placement (title/intro/H2/meta), keyword density, search-description length, word count, single-H1 guard, H2 usage, image alt/srcset/lazy checks, internal/external links, Flesch readability → 0-100 score |
+| Real-time on-page SEO checklist | `server/seo/analyzer.js` — title length, focus-keyword placement (title/intro/H2/meta), keyword density, search-description length, word count, single-H1 guard, H2 usage, image alt/srcset/lazy checks, internal/external links, Flesch readability, plus **AI-search (GEO) checks**: answer-first opening (25-90 word self-contained summary AI engines can quote), question-style headings (matches how people ask AI engines), and a freshness signal (current year / "updated" note). FAQ/HowTo schema is deliberately not generated - Google retired those rich results for most sites. All checks roll into a 0-100 score |
 | Auto image compression + CDN hosting + responsive `<img>` injection | `server/images/pipeline.js` — sharp → WebP at 480/800/1200/1600w, `srcset`/`sizes`, `loading="lazy"`, escaped alt text; storage driver abstraction (`server/images/storage.js`) |
 | JSON-LD Article schema on publish | `server/seo/schema.js` — headline, description, image, author, publisher, dates, wordCount, mainEntityOfPage |
 | Canonical tag injection | `<link rel="canonical">` embedded in the payload + JSON-LD `mainEntityOfPage` (see caveat below) |
@@ -151,3 +151,11 @@ See `docs/MODULES.md`. In short:
 
 **Freemium gating** (blueprint §8): 1 blog / 5 posts per month free; Pro tier unlocks
 unlimited posts, CDN hosting, AI meta/schema generation and social auto-posting.
+
+## Custom-domain nudge
+
+Blogs still on a free `*.blogspot.com` subdomain see a persistent dashboard banner explaining why that is the #1 Blogger SEO mistake (slow trust-building, weaker credibility with readers and AI answers) and the four steps to fix it: buy a domain (Cloudflare Registrar suggested - at-cost pricing with free DNS), Blogger Settings > Publishing > Custom domain, add the two CNAME records, enable HTTPS redirect. The banner disappears automatically once every connected blog is on a custom domain.
+
+## Design system
+
+The UI is a custom "paper & ink" editorial design: Fraunces serif for the writing surface and headings, Inter for UI chrome, a forest-green accent on warm paper, and a hand-drawn-style pen-nib logo (`client/logo.svg`). Checklist items are grouped (Foundations, Focus keyword, Meta, Images, Links, AI search) with per-group pass counts, and the whole theme is tokenized in `client/styles.css` under `:root`.

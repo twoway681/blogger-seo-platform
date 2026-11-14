@@ -4,7 +4,7 @@
     "name": "Slate",
     "description": "Clean minimal sans-serif on light. The default pick for general blogging.",
     "version": "1.0.0",
-    "author": "BloggerSEO",
+    "author": "Blogsmith",
     "guide": "slate/README.md"
   },
   {
@@ -12,7 +12,7 @@
     "name": "Paper",
     "description": "Quiet serif on a warm paper background. Best for long-form writing, essays and book blogs.",
     "version": "1.0.0",
-    "author": "BloggerSEO",
+    "author": "Blogsmith",
     "guide": "paper/README.md"
   },
   {
@@ -20,7 +20,7 @@
     "name": "Pulse",
     "description": "Card grid with featured images and a dark header. Best for photo, food, travel and magazine blogs.",
     "version": "1.0.0",
-    "author": "BloggerSEO",
+    "author": "Blogsmith",
     "guide": "pulse/README.md"
   },
   {
@@ -28,7 +28,7 @@
     "name": "Mono",
     "description": "Terminal-inspired with automatic dark mode. Best for tech and programming blogs.",
     "version": "1.0.0",
-    "author": "BloggerSEO",
+    "author": "Blogsmith",
     "guide": "mono/README.md"
   }
 ]

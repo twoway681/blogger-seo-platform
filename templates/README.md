@@ -11,7 +11,7 @@ Each template = a folder holding `theme.xml` plus its own README, and an entry i
   "name": "Slate",
   "description": "Clean minimal sans-serif on light. The default pick for general blogging.",
   "version": "1.0.0",
-  "author": "BloggerSEO",
+  "author": "Blogsmith",
   "guide": "slate/README.md"
 }
 ```

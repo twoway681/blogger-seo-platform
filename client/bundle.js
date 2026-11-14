@@ -23636,10 +23636,17 @@ ${prefix}
     app.innerHTML = "";
     app.appendChild(el(`
     <div class="login-wrap"><div class="login-card">
-      <h1>Blogger<span style="color:var(--accent)">SEO</span></h1>
-      <p>The smart SEO editor for free .blogspot.com blogs. Write with a live SEO checklist, auto-optimized images, schema injection, and one-click publishing through the Blogger API.</p>
+      <img class="logo" src="/logo.svg" alt="Blogsmith logo" />
+      <h1>Blogsmith</h1>
+      <p class="tagline">The SEO studio for Blogger.</p>
+      <div class="login-feats">
+        <div class="feat"><span class="tick">&#10003;</span>Live SEO checklist while you write, score included</div>
+        <div class="feat"><span class="tick">&#10003;</span>Images auto-compressed to fast WebP with responsive markup</div>
+        <div class="feat"><span class="tick">&#10003;</span>Article schema and canonical tags injected on publish</div>
+        <div class="feat"><span class="tick">&#10003;</span>One-click publishing, scheduling and social repurposing</div>
+      </div>
       <button class="btn-primary" id="connect">Connect Google Blogger</button>
-      <p class="hint" style="margin-top:1rem">Without Google credentials configured, this runs in demo mode with a simulated Blogger - no real blog is touched.</p>
+      <p class="fine">Made for blogs on Blogger. Without Google credentials configured, Blogsmith runs in demo mode with a simulated Blogger - no real blog is touched.</p>
     </div></div>`));
     document.getElementById("connect").onclick = () => {
       window.location.href = "/auth/google";
@@ -23651,7 +23658,7 @@ ${prefix}
     app.appendChild(el(`
     <div>
       <div class="topbar">
-        <div class="brand">Blogger<span>SEO</span></div>
+        <div class="brand"><img src="/logo.svg" alt="Blogsmith logo" />Blogsmith</div>
         <span class="badge ${demo ? "demo" : "live"}">${demo ? "DEMO MODE" : "GOOGLE CONNECTED"}</span>
         <span class="badge ${state.me.livePublishingEnabled ? "live" : "dry"}">${state.me.livePublishingEnabled ? "LIVE PUBLISHING" : "DRY RUN - nothing sent live"}</span>
         <div class="spacer"></div>
@@ -23677,7 +23684,21 @@ ${prefix}
   }
   function renderDashboard() {
     const v = view();
+    const onFreeSubdomain = state.blogs.some((b) => /\.blogspot\.com\/?$/i.test(String(b.url || "")));
     v.innerHTML = `
+    ${onFreeSubdomain ? `<div class="notice" id="domain-nudge">
+      <div class="icon">&#9888;</div>
+      <div>
+        <h3>Your blog is on a free .blogspot.com subdomain - the #1 Blogger SEO mistake</h3>
+        <p>Free subdomains earn Google's trust slowly and look less credible to readers and AI answers. A custom domain (about $10-12/year) is the single highest-impact upgrade for a Blogger blog.</p>
+        <ol>
+          <li>Buy a domain - Cloudflare Registrar sells at cost with free DNS (no markup renewals); any registrar works.</li>
+          <li>In Blogger: <strong>Settings &gt; Publishing &gt; Custom domain</strong>, enter your new domain.</li>
+          <li>Add the two CNAME records Blogger shows you at your DNS provider, wait a few minutes, retry.</li>
+          <li>Turn on <strong>HTTPS availability + HTTPS redirect</strong> in the same settings page.</li>
+        </ol>
+        <p class="hint">Your posts, SEO scores and Search Console setup carry over - this platform works the same either way, and the sitemap resubmits itself on the next publish.</p>
+      </div></div>` : ""}
     <div class="section-title">Connected blogs</div>
     <div class="blog-grid" id="blogs"></div>
     <div class="section-title">Your drafts & posts</div>
@@ -23985,9 +24006,32 @@ ${prefix}
     <div class="hint" style="margin-left:auto;text-align:right">${stats.wordCount} words<br>${stats.images} images<br>${stats.internalLinks} int links</div>`;
     const list = document.getElementById("seo-checks");
     list.innerHTML = "";
-    for (const c of checks) {
+    const GROUPS = [
+      ["Foundations", ["title-length", "word-count", "h1-count", "h2-usage", "readability"]],
+      ["Focus keyword", ["focus-keyword", "kw-title", "kw-intro", "kw-heading", "kw-meta", "kw-density"]],
+      ["Meta & snippet", ["meta-length"]],
+      ["Images", ["images", "img-alt", "img-responsive"]],
+      ["Links", ["internal-links", "external-links"]],
+      ["AI search (GEO)", ["geo-answer-first", "geo-question-headings", "geo-freshness"]]
+    ];
+    const byId = new Map(checks.map((c) => [c.id, c]));
+    const seen = /* @__PURE__ */ new Set();
+    const renderCheck = (c) => {
+      seen.add(c.id);
       list.appendChild(el(`<div class="check"><span class="dot ${c.status}"></span>
       <div><div class="label">${esc(c.label)}</div><div class="detail">${esc(c.detail)}</div></div></div>`));
+    };
+    for (const [name, ids] of GROUPS) {
+      const group = ids.map((id) => byId.get(id)).filter(Boolean);
+      if (!group.length) continue;
+      const passing = group.filter((c) => c.status === "pass").length;
+      list.appendChild(el(`<div class="check-group-title"><span>${esc(name)}</span><span class="count">${passing}/${group.length}</span></div>`));
+      group.forEach(renderCheck);
+    }
+    const rest = checks.filter((c) => !seen.has(c.id));
+    if (rest.length) {
+      list.appendChild(el(`<div class="check-group-title"><span>Other</span></div>`));
+      rest.forEach(renderCheck);
     }
   }
   async function keywordIdeas() {
