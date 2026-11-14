@@ -99,20 +99,20 @@ const api = {
   userinfo,
   withFreshToken,
   listBlogs: (token) => blogger(token, 'GET', '/users/self/blogs'),
-  getBlog: (token, blogId) => blogger(token, 'GET', `/blogs/${blogId}`),
+  getBlog: (token, blogId) => blogger(token, 'GET', `/blogs/${encodeURIComponent(blogId)}`),
   insertPost: (token, blogId, payload, { isDraft } = {}) =>
-    blogger(token, 'POST', `/blogs/${blogId}/posts/${isDraft ? '?isDraft=true' : ''}`, payload),
+    blogger(token, 'POST', `/blogs/${encodeURIComponent(blogId)}/posts/${isDraft ? '?isDraft=true' : ''}`, payload),
   // Scheduling is native to Blogger: publish a DRAFT with publishDate in the future
   // (https://developers.google.com/blogger/docs/3.0/reference/posts/publish).
   publishPost: (token, blogId, postId, publishDate) =>
-    blogger(token, 'POST', `/blogs/${blogId}/posts/${postId}/publish${publishDate ? `?publishDate=${encodeURIComponent(publishDate)}` : ''}`),
-  updatePost: (token, blogId, postId, payload) => blogger(token, 'PATCH', `/blogs/${blogId}/posts/${postId}`, payload),
-  deletePost: (token, blogId, postId) => blogger(token, 'DELETE', `/blogs/${blogId}/posts/${postId}`),
-  listPosts: (token, blogId) => blogger(token, 'GET', `/blogs/${blogId}/posts?maxResults=50`),
+    blogger(token, 'POST', `/blogs/${encodeURIComponent(blogId)}/posts/${encodeURIComponent(postId)}/publish${publishDate ? `?publishDate=${encodeURIComponent(publishDate)}` : ''}`),
+  updatePost: (token, blogId, postId, payload) => blogger(token, 'PATCH', `/blogs/${encodeURIComponent(blogId)}/posts/${encodeURIComponent(postId)}`, payload),
+  deletePost: (token, blogId, postId) => blogger(token, 'DELETE', `/blogs/${encodeURIComponent(blogId)}/posts/${encodeURIComponent(postId)}`),
+  listPosts: (token, blogId) => blogger(token, 'GET', `/blogs/${encodeURIComponent(blogId)}/posts?maxResults=50`),
   // Blogger pages API: static pages (About, Privacy, Disclosure). pages.list
   // returns full resources including content; pages.insert publishes a page.
-  listPages: (token, blogId) => blogger(token, 'GET', `/blogs/${blogId}/pages`),
-  insertPage: (token, blogId, payload) => blogger(token, 'POST', `/blogs/${blogId}/pages/`, payload),
+  listPages: (token, blogId) => blogger(token, 'GET', `/blogs/${encodeURIComponent(blogId)}/pages`),
+  insertPage: (token, blogId, payload) => blogger(token, 'POST', `/blogs/${encodeURIComponent(blogId)}/pages/`, payload),
 };
 
 module.exports = api;

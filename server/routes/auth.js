@@ -53,7 +53,7 @@ router.get('/google', (req, res) => {
 router.get('/google/callback', async (req, res) => {
   try {
     const { code, state, error } = req.query;
-    if (error) return res.status(400).send(`OAuth error: ${error}`);
+    if (error) return res.status(400).type('text/plain').send(`OAuth error: ${String(error).slice(0, 200)}`);
     if (!code || !state) return res.status(400).send('Missing code/state');
     const st = db.prepare('SELECT state, created_at FROM oauth_states WHERE state = ?').get(state);
     if (!st || Date.now() - st.created_at > 10 * 60 * 1000) return res.status(400).send('Invalid or expired state');
@@ -79,7 +79,7 @@ router.get('/google/callback', async (req, res) => {
     setSessionCookie(res, createSession(userId));
     res.redirect('/');
   } catch (err) {
-    res.status(500).send(`Sign-in failed: ${err.message}`);
+    res.status(500).type('text/plain').send(`Sign-in failed: ${String(err.message).slice(0, 300)}`);
   }
 });
 

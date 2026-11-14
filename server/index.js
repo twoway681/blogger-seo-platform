@@ -49,6 +49,7 @@ function createApp() {
   app.use(express.json({ limit: '2mb' }));
   app.use(cookieParser());
 
+  app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
   app.use('/auth', auth.router);
   app.use('/api', api);
 

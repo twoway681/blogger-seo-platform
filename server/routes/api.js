@@ -118,8 +118,13 @@ router.delete('/posts/:id', requireAuth, (req, res) => {
 });
 
 // --- SEO analysis (live editor sidebar + server-side snapshot) ---------
+// Bound text inputs before regex-heavy analysis (polynomial-ReDoS surface).
+const MAX_ANALYZE_CHARS = 300000;
+const clip = (v) => (typeof v === 'string' && v.length > MAX_ANALYZE_CHARS ? v.slice(0, MAX_ANALYZE_CHARS) : v);
+
 router.post('/seo/analyze', requireAuth, (req, res) => {
-  const { title, html, metaDescription, focusKeyword, blogId } = req.body || {};
+  let { title, html, metaDescription, focusKeyword, blogId } = req.body || {};
+  title = clip(title); html = clip(html); metaDescription = clip(metaDescription); focusKeyword = clip(focusKeyword);
   const siteUrl = blogId ? blogUrlFor(req.user.id, String(blogId)) : '';
   res.json(analyzePost({ title, html, metaDescription, focusKeyword, siteUrl }));
 });
@@ -134,13 +139,15 @@ router.get('/blogs/:blogId/llms.txt', requireAuth, (req, res) => {
 });
 
 router.post('/qa/suggest', requireAuth, (req, res) => {
-  const { title, html, focusKeyword } = req.body || {};
+  let { title, html, focusKeyword } = req.body || {};
+  title = clip(title); html = clip(html); focusKeyword = clip(focusKeyword);
   res.json({ suggestions: suggestQa({ title, html, focusKeyword }) });
 });
 
 // --- Writing quality lint (research build-now: local readability/grammar) ------
 router.post('/seo/lint', requireAuth, (req, res) => {
-  const { title, html } = req.body || {};
+  let { title, html } = req.body || {};
+  title = clip(title); html = clip(html);
   res.json(lintHtml({ title, html }));
 });
 
