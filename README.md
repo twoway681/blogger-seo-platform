@@ -182,3 +182,32 @@ Two answer-engine optimization tools live alongside the GEO checklist:
   block** button previews the pairs and inserts them as visible content at the end of
   the post. No FAQ schema is emitted - Google retired FAQ rich results for most sites;
   clear visible Q&A is what AI engines quote.
+
+## Monetization readiness kit + orphan detection
+
+Two revenue-adjacent tools (`server/monetize/kit.js`, `server/links/orphans.js`):
+
+- **Monetization readiness** (dashboard **Monetization** button, `GET /api/blogs/:blogId/monetization`) -
+  an AdSense approval checklist computed from the blog's real state: privacy/about/disclosure
+  pages present, published-post volume and depth, custom domain, plus clearly-marked manual
+  confirmations (contact info, original content, navigation). It also scans published posts
+  for affiliate links and escalates the disclosure page from "warn" to "fail" when any exist.
+- **Legal page generator** (`POST /api/blogs/:blogId/monetization/page`) - one click generates and
+  publishes a Privacy Policy (incl. cookie/ads language), About page or FTC-compliant Affiliate
+  Disclosure as a Blogger **static page** (`pages.insert`; real API only called in live mode,
+  otherwise the exact payload is stored - same honesty rule as posts). Already-existing pages on
+  the live blog are detected by title via `pages.list`.
+- **rel="sponsored" tagging + FTC disclosure in the editor** - the analyzer gains a Monetization
+  check group: affiliate links (amzn, tag=, ShareASale, Impact, Gumroad, etc.) without
+  `rel="sponsored"` fail, and posts with affiliate links but no visible disclosure near the top
+  fail (FTC conspicuousness). The toolbar **Sponsored** button toggles `rel="sponsored noopener"`
+  on the selected link (TipTap Link extended with a `rel` attribute), and **Insert disclosure**
+  drops a plain-language FTC block at the top of the post. `tagSponsoredLinks()` is also exported
+  for one-shot cleanup of existing HTML.
+- **Orphan-post detection** (dashboard **Orphan posts** button, `GET /api/blogs/:blogId/orphans`) -
+  builds the internal link graph across all published posts (provider post bodies + locally
+  published drafts) and lists posts with zero inbound internal links. URL matching collapses
+  Blogger's variants (`?m=1`, trailing slash, http/https, www), and self-links never count.
+  The fix path is the existing **Suggest links** flow from a related post.
+
+Demo mode ships a realistic corpus: three fake posts with bodies, one deliberately orphaned.

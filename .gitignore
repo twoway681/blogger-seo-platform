@@ -5,3 +5,4 @@ public/uploads/*
 !public/uploads/.gitkeep
 public/bundle.js
 *.log
+client/dev-harness.html

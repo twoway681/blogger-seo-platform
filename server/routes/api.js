@@ -13,6 +13,8 @@ const { processImage } = require('../images/pipeline');
 const { suggestKeywords, researchKeywords } = require('../keywords/provider');
 const sc = require('../searchconsole/provider');
 const { suggestInternalLinks } = require('../links/suggest');
+const { findOrphans } = require('../links/orphans');
+const money = require('../monetize/kit');
 const fs = require('fs');
 const path = require('path');
 
@@ -367,6 +369,101 @@ router.get('/posts/:id/payload', requireAuth, (req, res) => {
   const row = db.prepare('SELECT last_payload_json FROM posts WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
   if (!row) return res.status(404).json({ error: 'post_not_found' });
   res.json(row.last_payload_json ? JSON.parse(row.last_payload_json) : null);
+});
+
+// --- Monetization readiness kit (AdSense checklist + legal page generator) ----
+// Assemble everything known about a blog's published content: live posts from
+// the provider plus local drafts that were published/dry-run published.
+async function publishedContentFor(user, blogId) {
+  let providerPosts = [];
+  try {
+    const data = await provider.listPosts(user, blogId, saveTokens(user.id));
+    providerPosts = (data.items || []).map((p) => ({ title: p.title || '', url: p.url || '', content: p.content || '', status: 'published' }));
+  } catch { /* provider unreachable - local rows still count */ }
+  const local = db.prepare(`SELECT title, html, status, published_url FROM posts
+    WHERE user_id = ? AND blog_id = ? AND status IN ('published','live_dry_run')`).all(user.id, String(blogId))
+    .map((p) => ({ title: p.title, url: p.published_url || '', content: p.html || '', status: p.status }));
+  const seen = new Set(providerPosts.map((p) => p.url));
+  return providerPosts.concat(local.filter((p) => !p.url || !seen.has(p.url)));
+}
+
+router.get('/blogs/:blogId/monetization', requireAuth, async (req, res) => {
+  const blog = db.prepare('SELECT name, url FROM blogs WHERE id = ? AND user_id = ?').get(req.params.blogId, req.user.id);
+  if (!blog) return res.status(404).json({ error: 'blog_not_found' });
+  const posts = await publishedContentFor(req.user, req.params.blogId);
+  // A legal page counts as present when Blogsmith published it or it already
+  // exists on the live blog (provider pages.list, matched by title).
+  const generated = db.prepare('SELECT kind, status, page_url AS pageUrl FROM monetization_pages WHERE blog_id = ? AND user_id = ?')
+    .all(req.params.blogId, req.user.id);
+  const pages = { privacy: false, about: false, disclosure: false };
+  for (const g of generated) pages[g.kind] = true;
+  try {
+    const live = await provider.listPages(req.user, req.params.blogId, saveTokens(req.user.id));
+    for (const p of live.items || []) {
+      const t = String(p.title || '').toLowerCase();
+      if (t.includes('privacy')) pages.privacy = true;
+      if (t.includes('about')) pages.about = true;
+      if (t.includes('disclosure')) pages.disclosure = true;
+    }
+  } catch { /* pages check best-effort */ }
+  const checklist = money.adsenseChecklist({ blog, posts, pages });
+  const affiliateLinks = posts.reduce((n, p) => n + money.findAffiliateLinks(p.content || '').length, 0);
+  res.json({ checklist, pages, generated, affiliateLinks });
+});
+
+// Generate a legal page (privacy | about | disclosure) and publish it as a
+// Blogger static page. Same honesty rule as posts: the real Blogger API is only
+// called when PUBLISH_MODE=live; otherwise the exact payload is stored.
+router.post('/blogs/:blogId/monetization/page', requireAuth, async (req, res) => {
+  const { kind } = req.body || {};
+  if (!money.PAGE_KINDS.includes(kind)) return res.status(400).json({ error: `kind must be one of: ${money.PAGE_KINDS.join(', ')}` });
+  const blog = db.prepare('SELECT name, url FROM blogs WHERE id = ? AND user_id = ?').get(req.params.blogId, req.user.id);
+  if (!blog) return res.status(404).json({ error: 'blog_not_found' });
+  const page = money.generatePage(kind, {
+    blogName: blog.name, blogUrl: blog.url, ownerName: req.user.name, email: req.user.email,
+  });
+  const payload = { kind: 'blogger#page', title: page.title, content: page.html };
+  const willCallLive = provider.isGoogle() && config.livePublishingEnabled;
+  try {
+    let result;
+    if (willCallLive) {
+      result = await provider.insertPage(req.user, req.params.blogId, payload, saveTokens(req.user.id));
+    } else if (provider.isGoogle()) {
+      result = { dryRun: true, reason: 'PUBLISH_MODE is not "live" - payload built, nothing sent to Blogger.' };
+    } else {
+      result = await provider.insertPage(req.user, req.params.blogId, payload, saveTokens(req.user.id)); // demo provider
+    }
+    const status = willCallLive || !provider.isGoogle() ? 'published' : 'live_dry_run';
+    db.prepare(`INSERT INTO monetization_pages (blog_id, user_id, kind, title, status, page_url, payload_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(blog_id, kind) DO UPDATE SET title=excluded.title, status=excluded.status,
+        page_url=excluded.page_url, payload_json=excluded.payload_json, created_at=excluded.created_at`)
+      .run(req.params.blogId, req.user.id, kind, page.title, status, result.url || null, JSON.stringify(payload));
+    res.json({ ok: true, kind, title: page.title, status, url: result.url || null, dryRun: Boolean(result.dryRun), html: page.html });
+  } catch (err) {
+    res.status(502).json({ error: 'page_publish_failed', message: err.message });
+  }
+});
+
+// The FTC disclosure snippet the editor inserts at the top of a post.
+router.get('/monetize/disclosure-snippet', requireAuth, (req, res) => {
+  res.json({ html: money.disclosureBlock() });
+});
+
+// --- Orphan-post detection ---------------------------------------------------
+router.get('/blogs/:blogId/orphans', requireAuth, async (req, res) => {
+  const blog = db.prepare('SELECT name, url FROM blogs WHERE id = ? AND user_id = ?').get(req.params.blogId, req.user.id);
+  if (!blog) return res.status(404).json({ error: 'blog_not_found' });
+  const posts = await publishedContentFor(req.user, req.params.blogId);
+  const withUrls = posts.filter((p) => p.url);
+  const graph = findOrphans({ posts: withUrls });
+  res.json({
+    total: graph.total,
+    orphanCount: graph.orphans.length,
+    orphans: graph.orphans,
+    linked: graph.linked,
+    noBody: withUrls.filter((p) => !p.content).map((p) => ({ title: p.title, url: p.url })),
+  });
 });
 
 module.exports = router;

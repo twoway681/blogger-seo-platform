@@ -81,6 +81,17 @@ CREATE TABLE IF NOT EXISTS indexing (
   result_json TEXT,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS monetization_pages (
+  blog_id TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  kind TEXT NOT NULL,            -- privacy | about | disclosure
+  title TEXT NOT NULL,
+  status TEXT NOT NULL,          -- published | live_dry_run
+  page_url TEXT,
+  payload_json TEXT,             -- exact Blogger pages.insert payload
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (blog_id, kind)
+);
 CREATE TABLE IF NOT EXISTS images (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id),

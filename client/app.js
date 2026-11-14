@@ -1,7 +1,23 @@
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
+import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
+
+// Link extended with a rel attribute so affiliate links can carry
+// rel="sponsored noopener" (a Google requirement for paid links).
+const LinkWithRel = Link.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      rel: {
+        default: null,
+        parseHTML: (el) => el.getAttribute('rel'),
+        renderHTML: (attrs) => (attrs.rel ? { rel: attrs.rel } : {}),
+      },
+    };
+  },
+});
 
 const app = document.getElementById('app');
 const state = { me: null, blogs: [], posts: [], post: null, editor: null, analyzeTimer: null, saveTimer: null, dirty: false };
@@ -118,13 +134,17 @@ function renderDashboard() {
     const card = el(`<div class="blog-card">
       <h3>${esc(b.name)}</h3><div class="url">${esc(b.url || '')}</div>
       <div class="hint sc-status" style="margin-top:0.5rem">Search Console: ...</div>
-      <div style="display:flex;gap:0.5rem;margin-top:0.7rem">
+      <div style="display:flex;gap:0.5rem;margin-top:0.7rem;flex-wrap:wrap">
         <button class="btn-primary">New post</button>
         <button class="btn-ghost sc-setup">Set up Search Console</button>
         <button class="btn-ghost llms-btn">llms.txt</button>
+        <button class="btn-ghost money-btn">Monetization</button>
+        <button class="btn-ghost orphan-btn">Orphan posts</button>
       </div></div>`);
     card.querySelector('.btn-primary').onclick = () => newPost(b);
     card.querySelector('.llms-btn').onclick = () => showLlmsTxt(b);
+    card.querySelector('.money-btn').onclick = () => showMonetization(b);
+    card.querySelector('.orphan-btn').onclick = () => showOrphans(b);
     const statusEl = card.querySelector('.sc-status');
     const refreshSc = async () => {
       try {
@@ -230,6 +250,86 @@ async function showLlmsTxt(blog) {
   };
 }
 
+// ---------- monetization readiness kit ----------
+async function showMonetization(blog) {
+  const modal = el(`<div class="modal-backdrop"><div class="modal">
+    <h3>Monetization readiness - ${esc(blog.name || 'blog')}</h3>
+    <p class="hint">What AdSense (and later, premium ad networks) look for before approving a blog. Green items are done; the page generator below fixes the legal pages in one click.</p>
+    <div id="money-checks"><div class="hint" style="padding:0.4rem 0">Checking...</div></div>
+    <div class="section-title" style="margin-top:0.8rem">Legal pages</div>
+    <div class="hint" id="money-aff"></div>
+    <div class="row" id="money-pages" style="margin-top:0.4rem"></div>
+    <div class="row" style="margin-top:0.8rem"><button class="btn-ghost" id="close-modal">Close</button></div>
+  </div></div>`);
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.querySelector('#close-modal').onclick = close;
+  modal.onclick = (e) => { if (e.target === modal) close(); };
+
+  const render = async () => {
+    let d;
+    try { d = await api(`/blogs/${encodeURIComponent(blog.id)}/monetization`); }
+    catch (e) { modal.querySelector('#money-checks').innerHTML = `<div class="empty">Could not load: ${esc(e.message)}</div>`; return; }
+    const list = modal.querySelector('#money-checks');
+    list.innerHTML = '';
+    for (const c of d.checklist) {
+      list.appendChild(el(`<div class="check"><span class="dot ${c.status}"></span>
+        <div><div class="label">${esc(c.label)}${c.manual ? ' <span class="hint">(confirm)</span>' : ''}</div>
+        <div class="detail">${esc(c.detail)}</div></div></div>`));
+    }
+    modal.querySelector('#money-aff').textContent = d.affiliateLinks
+      ? `${d.affiliateLinks} affiliate link(s) found in published posts - a Disclosure page is required.`
+      : 'No affiliate links in published posts yet.';
+    const pagesRow = modal.querySelector('#money-pages');
+    pagesRow.innerHTML = '';
+    for (const kind of ['privacy', 'about', 'disclosure']) {
+      const done = d.pages[kind];
+      const b2 = el(`<button class="${done ? 'btn-ghost' : 'btn-primary'}">${done ? 'Regenerate' : 'Generate'} ${kind === 'privacy' ? 'Privacy Policy' : kind === 'about' ? 'About' : 'Affiliate Disclosure'}</button>`);
+      b2.onclick = async () => {
+        b2.disabled = true;
+        b2.textContent = 'Generating...';
+        try {
+          const r = await api(`/blogs/${encodeURIComponent(blog.id)}/monetization/page`, { method: 'POST', body: { kind } });
+          toast(r.dryRun ? `${r.title} page built (dry run - payload stored, nothing sent)` : `${r.title} page published${r.url ? ': ' + r.url : ''}`);
+          render();
+        } catch (e) { toast(`Page failed: ${e.message}`); b2.disabled = false; }
+      };
+      pagesRow.appendChild(b2);
+    }
+  };
+  render();
+}
+
+// ---------- orphan-post detection ----------
+async function showOrphans(blog) {
+  const modal = el(`<div class="modal-backdrop"><div class="modal">
+    <h3>Orphan posts - ${esc(blog.name || 'blog')}</h3>
+    <p class="hint">Published posts no other post links to. Crawlers rarely find them and readers never do - open a related post and use "Suggest links" to fix each one.</p>
+    <div id="orphan-list"><div class="hint" style="padding:0.4rem 0">Scanning internal links...</div></div>
+    <div class="row" style="margin-top:0.8rem"><button class="btn-ghost" id="close-modal">Close</button></div>
+  </div></div>`);
+  document.body.appendChild(modal);
+  modal.querySelector('#close-modal').onclick = () => modal.remove();
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  let d;
+  try { d = await api(`/blogs/${encodeURIComponent(blog.id)}/orphans`); }
+  catch (e) { modal.querySelector('#orphan-list').innerHTML = `<div class="empty">Scan failed: ${esc(e.message)}</div>`; return; }
+  const list = modal.querySelector('#orphan-list');
+  list.innerHTML = '';
+  list.appendChild(el(`<div class="hint" style="margin-bottom:0.5rem">${d.orphanCount} orphan(s) across ${d.total} published post(s).</div>`));
+  if (!d.orphans.length) list.appendChild(el('<div class="empty">No orphans - every published post has at least one internal link pointing to it.</div>'));
+  for (const o of d.orphans) {
+    list.appendChild(el(`<div class="check"><span class="dot fail"></span>
+      <div><div class="label">${esc(o.title)}</div>
+      <div class="detail">${esc(o.url)} - 0 internal links point here</div></div></div>`));
+  }
+  for (const l of (d.linked || []).slice(0, 8)) {
+    list.appendChild(el(`<div class="check"><span class="dot ${l.inbound >= 2 ? 'pass' : 'warn'}"></span>
+      <div><div class="label">${esc(l.title)}</div>
+      <div class="detail">${l.inbound} internal link(s) point here${l.inbound === 1 ? ' - one more would help' : ''}</div></div></div>`));
+  }
+}
+
 async function showInstallSteps(url) {
   const md = await fetch(url || '/templates/INSTALL.md').then((r) => r.text()).catch(() => 'Install guide unavailable.');
   const modal = el(`<div class="modal-backdrop"><div class="modal">
@@ -271,6 +371,7 @@ async function openEditor(id) {
           <button class="btn-ghost" id="pub-schedule">Schedule</button>
           <button class="btn-ghost" id="suggest-links">Suggest links</button>
           <button class="btn-ghost" id="qa-suggest">Suggest Q&amp;A block</button>
+          <button class="btn-ghost" id="insert-disclosure" title="Adds an FTC affiliate disclosure at the top of the post">Insert disclosure</button>
           <button class="btn-ghost" id="repurpose">Repurpose for social</button>
           <button class="btn-ghost" id="view-payload">View payload</button>
           <span class="save-state" id="save-state"></span>
@@ -297,7 +398,8 @@ async function openEditor(id) {
   state.editor = new Editor({
     element: document.getElementById('editor'),
     extensions: [
-      StarterKit.configure({ heading: { levels: [2, 3, 4] } }),
+      StarterKit.configure({ heading: { levels: [2, 3, 4] }, link: false }),
+      LinkWithRel.configure({ openOnClick: false }),
       Image.configure({ inline: false }),
       Placeholder.configure({ placeholder: 'Start writing... drop images anywhere. H2/H3 subheadings, links and lists all count toward your SEO score.' }),
     ],
@@ -332,6 +434,7 @@ async function openEditor(id) {
   document.getElementById('view-payload').onclick = showPayload;
   document.getElementById('suggest-links').onclick = suggestLinks;
   document.getElementById('qa-suggest').onclick = qaSuggest;
+  document.getElementById('insert-disclosure').onclick = insertDisclosure;
   document.getElementById('repurpose').onclick = repurposeModal;
   document.getElementById('kw-ideas').onclick = keywordIdeas;
   document.getElementById('kw-research').onclick = keywordResearch;
@@ -350,6 +453,7 @@ function buildToolbar() {
     ['List', (e) => e.chain().focus().toggleBulletList().run(), (e) => e.isActive('bulletList')],
     ['1. List', (e) => e.chain().focus().toggleOrderedList().run(), (e) => e.isActive('orderedList')],
     ['Link', setLink, (e) => e.isActive('link')],
+    ['Sponsored', toggleSponsored, (e) => /\bsponsored\b/.test(String(e.getAttributes('link').rel || ''))],
     ['Image', pickImage, () => false],
   ];
   bar.innerHTML = '';
@@ -374,6 +478,20 @@ function setLink(editor) {
   if (url === null) return;
   if (url === '') editor.chain().focus().unsetLink().run();
   else editor.chain().focus().setLink({ href: url }).run();
+}
+
+// Toggle rel="sponsored noopener" on the link under the cursor/selection.
+// Google requires paid (affiliate) links to be tagged; the monetization check
+// in the sidebar flags any that are not.
+function toggleSponsored(editor) {
+  if (!editor.isActive('link')) return toast('Select a link first, then mark it sponsored');
+  const attrs = editor.getAttributes('link');
+  const rel = String(attrs.rel || '');
+  const next = /\bsponsored\b/.test(rel)
+    ? rel.replace(/\s*\bsponsored\b/, '').replace(/\s*\bnoopener\b/, '').trim() || null
+    : `${rel} sponsored noopener`.trim();
+  editor.chain().focus().extendMarkRange('link').updateAttributes('link', { rel: next }).run();
+  toast(next ? 'Link tagged rel="sponsored noopener"' : 'Sponsored tag removed');
 }
 function pickImage() {
   const input = el('<input type="file" accept="image/*" style="display:none" />');
@@ -439,6 +557,7 @@ function renderSeo({ score, checks, stats }) {
     ['Images', ['images', 'img-alt', 'img-responsive']],
     ['Links', ['internal-links', 'external-links']],
     ['AI search (GEO)', ['geo-answer-first', 'geo-question-headings', 'geo-freshness']],
+    ['Monetization', ['money-sponsored', 'money-disclosure']],
   ];
   const byId = new Map(checks.map((c) => [c.id, c]));
   const seen = new Set();
@@ -506,6 +625,17 @@ async function keywordResearch() {
       list.appendChild(item);
     }
   } catch (e) { list.innerHTML = `<div class="hint" style="padding:0.4rem 0">Research failed: ${esc(e.message)}</div>`; }
+}
+
+async function insertDisclosure() {
+  const { html } = await api('/monetize/disclosure-snippet');
+  const current = state.editor.getHTML();
+  if (/affiliate links|Disclosure:/i.test(current.replace(/<[^>]+>/g, ' ').slice(0, 600))) {
+    return toast('A disclosure already appears near the top of this post');
+  }
+  state.editor.chain().focus().insertContentAt(0, html).run();
+  markDirty(); scheduleAnalyze();
+  toast('FTC disclosure inserted at the top of the post');
 }
 
 async function qaSuggest() {
