@@ -20,7 +20,7 @@ const config = {
       'email',
       'profile',
       'https://www.googleapis.com/auth/blogger',
-      'https://www.googleapis.com/auth/webmasters.readonly',
+      'https://www.googleapis.com/auth/webmasters', // read/write: sitemap submission + property setup
     ],
     redirectUri: `${(process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '')}/auth/google/callback`,
   },

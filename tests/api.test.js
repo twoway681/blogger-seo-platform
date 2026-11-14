@@ -117,6 +117,49 @@ test('templates, links suggest and keywords endpoints work in demo mode', async 
   assert.deepEqual(kw.suggestions, []);
 });
 
+test('Search Console onboarding, setup, sitemap, inspection and publish ping work in demo mode', async () => {
+  // GET /api/blogs auto-ran SC setup for freshly seen blogs (blueprint onboarding).
+  const status = await json(await call('GET', '/api/searchconsole/fake-blog-1'));
+  assert.equal(status.status, 'verified');
+  assert.ok(status.sitemapUrl.endsWith('/sitemap.xml'));
+  assert.ok(status.sitemapSubmittedAt);
+
+  // Explicit re-run is idempotent.
+  const setup = await json(await call('POST', '/api/searchconsole/fake-blog-1/setup', { body: {} }));
+  assert.equal(setup.ok, true);
+  assert.equal(setup.status, 'verified');
+
+  // Unknown URL -> submit -> indexed.
+  const url = 'https://my-demo-blog.blogspot.com/2026/11/brand-new-post.html';
+  const before = await json(await call('POST', '/api/searchconsole/fake-blog-1/inspect', { body: { url } }));
+  assert.equal(before.coverageState, 'URL is unknown to Google');
+  const after = await json(await call('POST', '/api/searchconsole/fake-blog-1/inspect', { body: { url, submit: true } }));
+  assert.equal(after.coverageState, 'Submitted and indexed');
+});
+
+test('publish pings Search Console indexing with the live URL', async () => {
+  const post = await json(await call('POST', '/api/posts', { body: { blogId: 'fake-blog-1', title: 'Indexing ping test' } }));
+  await json(await call('PUT', `/api/posts/${post.id}`, { body: { html: '<p>Ping me.</p>' } }));
+  const pub = await json(await call('POST', `/api/posts/${post.id}/publish`, { body: { mode: 'publish' } }));
+  assert.equal(pub.ok, true);
+  assert.ok(pub.indexing, 'indexing result attached to publish response');
+  assert.equal(pub.indexing.coverageState, 'Submitted and indexed');
+  const again = await json(await call('POST', '/api/searchconsole/fake-blog-1/inspect', { body: { url: pub.result.url } }));
+  assert.equal(again.coverageState, 'Submitted and indexed');
+});
+
+test('repurpose endpoint returns pin, thread, LinkedIn post and intent URLs', async () => {
+  const post = await json(await call('POST', '/api/posts', { body: { blogId: 'fake-blog-1', title: 'Repurpose Me: A Complete Guide' } }));
+  await json(await call('PUT', `/api/posts/${post.id}`, { body: { html: '<p>Summary paragraph.</p><h2>Step one</h2><p>Do it.</p><h2>Step two</h2><p>Do more.</p>' } }));
+  const d = await json(await call('POST', `/api/posts/${post.id}/repurpose`, { method: 'POST', body: {} }));
+  assert.ok(d.pinterestPin.title.length <= 100);
+  assert.ok(d.xThread.length >= 3);
+  assert.ok(d.linkedinPost.includes('Step one'));
+  assert.ok(d.intentUrls.x.startsWith('https://twitter.com/intent/post'));
+  assert.ok(d.intentUrls.pinterest.includes('pinterest.com'));
+  assert.equal(d.preview, true, 'unpublished post is flagged as preview URL');
+});
+
 test('unauthenticated API calls are rejected', async () => {
   const res = await fetch(`${base}/api/posts`);
   assert.equal(res.status, 401);

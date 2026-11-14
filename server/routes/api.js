@@ -9,6 +9,7 @@ const { analyzePost } = require('../seo/analyzer');
 const { composePostPayload } = require('../seo/compose');
 const { processImage } = require('../images/pipeline');
 const { suggestKeywords, researchKeywords } = require('../keywords/provider');
+const sc = require('../searchconsole/provider');
 const { suggestInternalLinks } = require('../links/suggest');
 const fs = require('fs');
 const path = require('path');
@@ -51,6 +52,11 @@ router.get('/blogs', requireAuth, async (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
       ON CONFLICT(id) DO UPDATE SET name=excluded.name, url=excluded.url, raw_json=excluded.raw_json, synced_at=excluded.synced_at`);
     for (const b of items) upsert.run(String(b.id), req.user.id, b.name || '', b.url || '', config.effectiveProvider, JSON.stringify(b));
+    // Blueprint Phase 2 onboarding: auto-run Search Console setup for newly seen blogs.
+    for (const b of items) {
+      const seen = db.prepare('SELECT blog_id FROM search_console WHERE blog_id = ?').get(String(b.id));
+      if (!seen && b.url) await runScSetup(req.user, String(b.id), b.url).catch(() => {});
+    }
     res.json({ items });
   } catch (err) {
     res.status(502).json({ error: 'blogger_api_error', message: err.message });
@@ -175,7 +181,29 @@ router.post('/posts/:id/publish', requireAuth, async (req, res) => {
         mode === 'schedule' ? new Date(scheduledAt).toISOString() : null,
         JSON.stringify(analysis), JSON.stringify({ payload, canonicalUrl, result }), post.id);
 
-    res.json({ ok: true, mode, dryRun, status: newStatus, result, canonicalUrl, seo: analysis });
+    // Blueprint: "instant URL inspection/pinging upon publish" - request indexing
+    // for the live post URL (tolerant: never fails the publish itself).
+    let indexing = null;
+    const postUrl = result && result.url;
+    if (postUrl && mode === 'publish') {
+      try {
+        const blog = db.prepare('SELECT url FROM blogs WHERE id = ? AND user_id = ?').get(post.blogId, req.user.id);
+        const scRow = db.prepare('SELECT site_url FROM search_console WHERE blog_id = ? AND user_id = ?').get(post.blogId, req.user.id);
+        const siteUrl = scRow ? scRow.site_url : blog.url.replace(/\/$/, '') + '/';
+        const insp = await sc.inspectUrl(req.user, siteUrl, postUrl, saveTokens(req.user.id), { submit: true });
+        const st = ((insp.inspectionResult || {}).indexStatusResult || {});
+        db.prepare(`INSERT INTO indexing (url, blog_id, user_id, coverage_state, last_crawl_time, result_json, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+          ON CONFLICT(url) DO UPDATE SET coverage_state=excluded.coverage_state, last_crawl_time=excluded.last_crawl_time,
+            result_json=excluded.result_json, updated_at=excluded.updated_at`)
+          .run(postUrl, post.blogId, req.user.id, st.coverageState || null, st.lastCrawlTime || null, JSON.stringify(insp));
+        indexing = { url: postUrl, coverageState: st.coverageState || 'unknown' };
+      } catch (err) {
+        indexing = { url: postUrl, error: err.message };
+      }
+    }
+
+    res.json({ ok: true, mode, dryRun, status: newStatus, result, canonicalUrl, seo: analysis, indexing });
   } catch (err) {
     res.status(502).json({ error: 'publish_failed', message: err.message });
   }
@@ -229,6 +257,87 @@ router.post('/links/suggest', requireAuth, async (req, res) => {
   } catch (err) {
     res.status(502).json({ error: 'blogger_api_error', message: err.message });
   }
+});
+
+// --- Search Console (Phase 2): verification, sitemap submission, URL inspection ---
+async function runScSetup(user, blogId, siteUrl) {
+  const cleanSite = siteUrl.replace(/\/$/, '') + '/';
+  try {
+    const site = await sc.addSite(user, cleanSite, saveTokens(user.id));
+    const sitemapUrl = `${cleanSite}sitemap.xml`;
+    const sitemap = await sc.submitSitemap(user, cleanSite, sitemapUrl, saveTokens(user.id));
+    db.prepare(`INSERT INTO search_console (blog_id, user_id, site_url, status, permission_level, sitemap_url, sitemap_submitted_at, details_json, updated_at)
+      VALUES (?, ?, ?, 'verified', ?, ?, datetime('now'), ?, datetime('now'))
+      ON CONFLICT(blog_id) DO UPDATE SET status='verified', permission_level=excluded.permission_level,
+        sitemap_url=excluded.sitemap_url, sitemap_submitted_at=excluded.sitemap_submitted_at,
+        error=NULL, details_json=excluded.details_json, updated_at=excluded.updated_at`)
+      .run(blogId, user.id, cleanSite, site.permissionLevel || 'siteOwner', sitemapUrl, JSON.stringify({ site, sitemap }));
+    return db.prepare('SELECT * FROM search_console WHERE blog_id = ?').get(blogId);
+  } catch (err) {
+    db.prepare(`INSERT INTO search_console (blog_id, user_id, site_url, status, error, updated_at)
+      VALUES (?, ?, ?, 'error', ?, datetime('now'))
+      ON CONFLICT(blog_id) DO UPDATE SET status='error', error=excluded.error, updated_at=excluded.updated_at`)
+      .run(blogId, user.id, cleanSite, err.message);
+    throw err;
+  }
+}
+
+router.get('/searchconsole/:blogId', requireAuth, (req, res) => {
+  const row = db.prepare('SELECT blog_id AS blogId, site_url AS siteUrl, status, sitemap_url AS sitemapUrl, sitemap_submitted_at AS sitemapSubmittedAt, error, updated_at AS updatedAt FROM search_console WHERE blog_id = ? AND user_id = ?')
+    .get(req.params.blogId, req.user.id);
+  res.json(row || { blogId: req.params.blogId, status: 'unverified' });
+});
+
+router.post('/searchconsole/:blogId/setup', requireAuth, async (req, res) => {
+  const blog = db.prepare('SELECT url FROM blogs WHERE id = ? AND user_id = ?').get(req.params.blogId, req.user.id);
+  if (!blog) return res.status(404).json({ error: 'blog_not_found' });
+  try {
+    const row = await runScSetup(req.user, req.params.blogId, blog.url);
+    res.json({ ok: true, status: row.status, siteUrl: row.site_url, sitemapUrl: row.sitemap_url, sitemapSubmittedAt: row.sitemap_submitted_at });
+  } catch (err) {
+    res.status(502).json({ error: 'sc_setup_failed', message: err.message });
+  }
+});
+
+// URL inspection: check index status, or request indexing (submit=true) - the
+// publish-time ping from the blueprint ("instant URL inspection/pinging upon publish").
+router.post('/searchconsole/:blogId/inspect', requireAuth, async (req, res) => {
+  const { url, submit } = req.body || {};
+  if (!url) return res.status(400).json({ error: 'url required' });
+  const scRow = db.prepare('SELECT site_url FROM search_console WHERE blog_id = ? AND user_id = ?').get(req.params.blogId, req.user.id);
+  const blog = db.prepare('SELECT url FROM blogs WHERE id = ? AND user_id = ?').get(req.params.blogId, req.user.id);
+  const siteUrl = scRow ? scRow.site_url : blog ? blog.url.replace(/\/$/, '') + '/' : null;
+  if (!siteUrl) return res.status(404).json({ error: 'blog_not_found' });
+  try {
+    const result = await sc.inspectUrl(req.user, siteUrl, url, saveTokens(req.user.id), { submit: Boolean(submit) });
+    const status = ((result.inspectionResult || {}).indexStatusResult || {});
+    db.prepare(`INSERT INTO indexing (url, blog_id, user_id, coverage_state, last_crawl_time, result_json, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(url) DO UPDATE SET coverage_state=excluded.coverage_state, last_crawl_time=excluded.last_crawl_time,
+        result_json=excluded.result_json, updated_at=excluded.updated_at`)
+      .run(url, req.params.blogId, req.user.id, status.coverageState || null, status.lastCrawlTime || null, JSON.stringify(result));
+    res.json({ url, coverageState: status.coverageState || 'unknown', submitted: Boolean(submit), result });
+  } catch (err) {
+    res.status(502).json({ error: 'inspection_failed', message: err.message });
+  }
+});
+
+// --- Social repurposing (Phase 3 seam: blogger-growth-modules) ----------------
+let repurposePromise = null;
+function loadRepurpose() {
+  if (!repurposePromise) repurposePromise = import('../../blogger-growth-modules/src/repurpose.mjs');
+  return repurposePromise;
+}
+
+router.post('/posts/:id/repurpose', requireAuth, async (req, res) => {
+  const post = getPost(req, res);
+  if (!post) return;
+  if (!post.html || !post.title) return res.status(400).json({ error: 'post needs a title and body first' });
+  const url = post.publishedUrl || `${(blogUrlFor(req.user.id, post.blogId) || 'https://yourblog.blogspot.com').replace(/\/$/, '')}/2026/11/preview-slug.html`;
+  const { repurposePost } = await loadRepurpose();
+  const firstImg = (post.html.match(/<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/i) || [])[1];
+  const out = repurposePost({ title: post.title, url, html: post.html, imageUrl: firstImg });
+  res.json({ url, preview: !post.publishedUrl, ...out });
 });
 
 // Inspect the exact payload that would be / was sent to Blogger (review + audit).

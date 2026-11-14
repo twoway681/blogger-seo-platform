@@ -96,8 +96,31 @@ function renderDashboard() {
   for (const b of state.blogs) {
     const card = el(`<div class="blog-card">
       <h3>${esc(b.name)}</h3><div class="url">${esc(b.url || '')}</div>
-      <button class="btn-primary">New post</button></div>`);
-    card.querySelector('button').onclick = () => newPost(b);
+      <div class="hint sc-status" style="margin-top:0.5rem">Search Console: ...</div>
+      <div style="display:flex;gap:0.5rem;margin-top:0.7rem">
+        <button class="btn-primary">New post</button>
+        <button class="btn-ghost sc-setup">Set up indexing</button>
+      </div></div>`);
+    card.querySelector('.btn-primary').onclick = () => newPost(b);
+    const statusEl = card.querySelector('.sc-status');
+    const refreshSc = async () => {
+      try {
+        const scs = await api(`/searchconsole/${b.id}`);
+        statusEl.textContent = scs.status === 'verified'
+          ? `Search Console: verified - sitemap submitted ${scs.sitemapSubmittedAt || ''}`
+          : scs.status === 'error' ? `Search Console: setup error` : 'Search Console: not set up';
+        card.querySelector('.sc-setup').style.display = scs.status === 'verified' ? 'none' : '';
+      } catch { statusEl.textContent = 'Search Console: status unavailable'; }
+    };
+    refreshSc();
+    card.querySelector('.sc-setup').onclick = async () => {
+      statusEl.textContent = 'Search Console: verifying + submitting sitemap...';
+      try {
+        const r = await api(`/searchconsole/${b.id}/setup`, { method: 'POST', body: {} });
+        toast(`Indexing set up: ${r.sitemapUrl} submitted`);
+      } catch (e) { toast(`Setup failed: ${e.message}`); }
+      refreshSc();
+    };
     blogWrap.appendChild(card);
   }
   const postWrap = v.querySelector('#posts');
@@ -193,6 +216,7 @@ async function openEditor(id) {
           <input type="datetime-local" id="schedule-at" title="Schedule date/time" />
           <button class="btn-ghost" id="pub-schedule">Schedule</button>
           <button class="btn-ghost" id="suggest-links">Suggest links</button>
+          <button class="btn-ghost" id="repurpose">Repurpose for social</button>
           <button class="btn-ghost" id="view-payload">View payload</button>
           <span class="save-state" id="save-state"></span>
         </div>
@@ -252,6 +276,7 @@ async function openEditor(id) {
   };
   document.getElementById('view-payload').onclick = showPayload;
   document.getElementById('suggest-links').onclick = suggestLinks;
+  document.getElementById('repurpose').onclick = repurposeModal;
   document.getElementById('kw-ideas').onclick = keywordIdeas;
   document.getElementById('kw-research').onclick = keywordResearch;
 
@@ -433,6 +458,39 @@ async function suggestLinks() {
   } catch (e) { toast(`Link suggestions failed: ${e.message}`); }
 }
 
+async function repurposeModal() {
+  await save();
+  try {
+    const d = await api(`/posts/${state.post.id}/repurpose`, { method: 'POST', body: {} });
+    const modal = el(`<div class="modal-backdrop"><div class="modal">
+      <h3>Share this post everywhere</h3>
+      ${d.preview ? '<p class="hint">Post is not published yet - content below uses a preview URL. Publish first for the real link.</p>' : `<p class="hint">Built from the live URL: ${esc(d.url)}</p>`}
+      <div id="rep-body"></div>
+      <div class="row"><button class="btn-ghost" id="close-modal">Close</button></div></div></div>`);
+    const body = modal.querySelector('#rep-body');
+    const section = (title, text, intentUrl) => {
+      const sec = el(`<div style="margin-bottom:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.3rem">
+          <strong>${esc(title)}</strong>
+          <span style="display:flex;gap:0.4rem">
+            <button class="btn-ghost" style="padding:0.2rem 0.6rem;font-size:0.75rem">Copy</button>
+            ${intentUrl ? `<a href="${esc(intentUrl)}" target="_blank" rel="noopener"><button class="btn-primary" style="padding:0.2rem 0.6rem;font-size:0.75rem">Open & post</button></a>` : ''}
+          </span></div>
+        <pre style="white-space:pre-wrap;font-size:0.8rem">${esc(text)}</pre></div>`);
+      sec.querySelector('button').onclick = () => { navigator.clipboard.writeText(text).then(() => toast(`${title} copied`)); };
+      return sec;
+    };
+    body.appendChild(section('Pinterest pin', `${d.pinterestPin.title}\n\n${d.pinterestPin.description}`, d.intentUrls.pinterest));
+    body.appendChild(section('X thread', d.xThread.map((t, i) => `[${i + 1}/${d.xThread.length}] ${t}`).join('\n\n'), d.intentUrls.x));
+    body.appendChild(section('LinkedIn post', d.linkedinPost, d.intentUrls.linkedin));
+    const wa = section('WhatsApp / Reddit', `WhatsApp: ${d.intentUrls.whatsapp}\nReddit: ${d.intentUrls.reddit}`, null);
+    body.appendChild(wa);
+    modal.querySelector('#close-modal').onclick = () => modal.remove();
+    modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+    document.body.appendChild(modal);
+  } catch (e) { toast(`Repurpose failed: ${e.message}`); }
+}
+
 // ---------- saving + publishing ----------
 function markDirty() {
   state.dirty = true;
@@ -459,7 +517,7 @@ async function publish(mode, when) {
     if (res.dryRun) {
       toast('Dry run complete - payload built, nothing sent. Use View payload to inspect it.');
     } else if (res.result && res.result.url) {
-      toast(`Published: ${res.result.url}`);
+      toast(`Published: ${res.result.url}${res.indexing && res.indexing.coverageState ? ' - indexing: ' + res.indexing.coverageState : ''}`);
     } else {
       toast(mode === 'draft' ? 'Saved as a Blogger draft.' : `Status: ${res.status}`);
     }

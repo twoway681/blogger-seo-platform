@@ -119,17 +119,35 @@ See `docs/MODULES.md`. In short:
 - **Keyword providers**: `server/keywords/provider.js` (fast autocomplete ideas + deep scored research) -> `GET /api/keywords/suggest`, `GET /api/keywords/research` + editor "Keyword ideas" panel. The deep path is implemented by `blogger-growth-modules/` (merged from the parallel work stream: keyword finder with low-competition scoring, social repurposing templates for Pinterest/X/LinkedIn, Featured Blogs Directory spec - see its README and specs).
 - **Internal links / distribution**: `server/links/suggest.js` + `POST /api/links/suggest` already rank older posts from the Blogger post-list API; social modules consume the local `posts` table after publish.
 
+## Search Console module (Phase 2, shipped)
+
+`server/searchconsole/` mirrors the Blogger provider pattern:
+- **Property verification + sitemap submission** - runs automatically the first time a
+  blog is seen (`GET /api/blogs`), and on demand via `POST /api/searchconsole/:blogId/setup`.
+  Submits `https://<blog>/sitemap.xml`, which every Blogger blog exposes natively.
+- **URL inspection + indexing ping on publish** - every publish requests indexing for the
+  live post URL and records the coverage state (`indexing` table); manual checks via
+  `POST /api/searchconsole/:blogId/inspect`.
+- **Fake provider** for demo mode simulates the whole lifecycle offline; the real client
+  (`googleClient.js`) rides the same OAuth session. Scope is now
+  `webmasters` (read/write) - if you already consented with the old readonly scope,
+  sign out and reconnect to re-consent.
+
 ## What's left (blueprint roadmap)
 
-**Phase 2 — Discovery & Indexing Engine (weeks 5-8)**
-- Search Console property verification + automatic `sitemap.xml` submission on onboarding
-- ~~Existing-post crawler → contextual internal-link suggestions~~ (MVP version shipped: `/api/links/suggest`)
-- Library of 3-5 fast, clean, mobile-first Blogger XML templates (drop-in point ready)
+**Phase 2 — Discovery & Indexing Engine** - COMPLETE
+- ~~Search Console verification + sitemap submission~~ (`/api/searchconsole/*`, auto on onboarding)
+- ~~Existing-post crawler → internal-link suggestions~~ (`/api/links/suggest`)
+- ~~Template library~~ (4 themes in `templates/`)
 
-**Phase 3 — Growth & Monetization (weeks 9-12)**
-- Long-tail low-competition keyword finder with difficulty scoring (provider seam ready, free sources only)
-- Auto-repurposing to Pinterest pins / X threads / LinkedIn posts
-- Public "Featured Blogs Directory" backlink hub
+**Phase 3 — Growth & Monetization**
+- ~~Long-tail keyword finder~~ (`/api/keywords/research`, opportunity scoring)
+- ~~Social repurposing~~ (`/api/posts/:id/repurpose` - pin/thread/LinkedIn + one-click
+  intent URLs; live Pinterest/LinkedIn posting stays dry-run until the user's free
+  developer apps are connected)
+- **Featured Blogs Directory - DEFERRED.** Competitive research (2026-11-14) found the
+  directory needs a ~$10/yr domain and ongoing moderation while delivering weak links;
+  deprioritized unless real users ask for it.
 
 **Freemium gating** (blueprint §8): 1 blog / 5 posts per month free; Pro tier unlocks
 unlimited posts, CDN hosting, AI meta/schema generation and social auto-posting.

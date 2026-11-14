@@ -59,6 +59,27 @@ CREATE TABLE IF NOT EXISTS posts (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS search_console (
+  blog_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  site_url TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'unverified',   -- unverified | verified | error
+  permission_level TEXT,
+  sitemap_url TEXT,
+  sitemap_submitted_at TEXT,
+  error TEXT,
+  details_json TEXT,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS indexing (
+  url TEXT PRIMARY KEY,
+  blog_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  coverage_state TEXT,
+  last_crawl_time TEXT,
+  result_json TEXT,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS images (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id),
