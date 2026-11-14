@@ -29,6 +29,8 @@ module.exports = {
   submitSitemap: (token, siteUrl, sitemapUrl) =>
     sc(token, 'PUT', `${SITES}/${encodeURIComponent(siteUrl)}/sitemaps/${encodeURIComponent(sitemapUrl)}`),
   listSitemaps: (token, siteUrl) => sc(token, 'GET', `${SITES}/${encodeURIComponent(siteUrl)}/sitemaps`),
+  // Read-only index-status observation. No indexing-request endpoint is called
+  // anywhere in this client: the Indexing API is JobPosting/BroadcastEvent-only.
   inspectUrl: (token, siteUrl, url) =>
     sc(token, 'POST', INSPECTION, { inspectionUrl: url, siteUrl }),
 };

@@ -117,7 +117,7 @@ test('templates, links suggest and keywords endpoints work in demo mode', async 
   assert.deepEqual(kw.suggestions, []);
 });
 
-test('Search Console onboarding, setup, sitemap, inspection and publish ping work in demo mode', async () => {
+test('Search Console onboarding, setup, sitemap and read-only inspection work in demo mode', async () => {
   // GET /api/blogs auto-ran SC setup for freshly seen blogs (blueprint onboarding).
   const status = await json(await call('GET', '/api/searchconsole/fake-blog-1'));
   assert.equal(status.status, 'verified');
@@ -129,21 +129,35 @@ test('Search Console onboarding, setup, sitemap, inspection and publish ping wor
   assert.equal(setup.ok, true);
   assert.equal(setup.status, 'verified');
 
-  // Unknown URL -> submit -> indexed.
+  // Inspection is read-only observation. After the sitemap hint from setup, the
+  // fake Google observes the URL first as discovered, later as indexed. There is
+  // no request-indexing action (Google restricts that API to jobs/livestreams).
   const url = 'https://my-demo-blog.blogspot.com/2026/11/brand-new-post.html';
-  const before = await json(await call('POST', '/api/searchconsole/fake-blog-1/inspect', { body: { url } }));
-  assert.equal(before.coverageState, 'URL is unknown to Google');
-  const after = await json(await call('POST', '/api/searchconsole/fake-blog-1/inspect', { body: { url, submit: true } }));
-  assert.equal(after.coverageState, 'Submitted and indexed');
+  const first = await json(await call('POST', '/api/searchconsole/fake-blog-1/inspect', { body: { url } }));
+  assert.equal(first.coverageState, 'Discovered - currently not indexed');
+  const later = await json(await call('POST', '/api/searchconsole/fake-blog-1/inspect', { body: { url } }));
+  assert.equal(later.coverageState, 'Submitted and indexed');
+  assert.ok(!('submitted' in later), 'inspection never reports a submission action');
 });
 
-test('publish pings Search Console indexing with the live URL', async () => {
-  const post = await json(await call('POST', '/api/posts', { body: { blogId: 'fake-blog-1', title: 'Indexing ping test' } }));
-  await json(await call('PUT', `/api/posts/${post.id}`, { body: { html: '<p>Ping me.</p>' } }));
+test('inspection refuses URLs outside the verified property (mirrors Google ownership rule)', async () => {
+  const url = 'https://some-other-domain.example/post.html';
+  const res = await call('POST', '/api/searchconsole/fake-blog-1/inspect', { body: { url } });
+  assert.equal(res.status, 502);
+  const body = await res.json();
+  assert.match(body.message, /ownership/i);
+});
+
+test('publish resubmits the sitemap and records OBSERVED index status (never a request)', async () => {
+  const post = await json(await call('POST', '/api/posts', { body: { blogId: 'fake-blog-1', title: 'Sitemap hint test' } }));
+  await json(await call('PUT', `/api/posts/${post.id}`, { body: { html: '<p>Hint me.</p>' } }));
   const pub = await json(await call('POST', `/api/posts/${post.id}/publish`, { body: { mode: 'publish' } }));
   assert.equal(pub.ok, true);
   assert.ok(pub.indexing, 'indexing result attached to publish response');
-  assert.equal(pub.indexing.coverageState, 'Submitted and indexed');
+  assert.ok(pub.indexing.sitemapHintAt, 'sitemap resubmission recorded separately');
+  // First observation after the hint: discovered, NOT indexed - submission != indexed.
+  assert.equal(pub.indexing.coverageState, 'Discovered - currently not indexed');
+  // A later inspection observes the simulated crawl completing.
   const again = await json(await call('POST', '/api/searchconsole/fake-blog-1/inspect', { body: { url: pub.result.url } }));
   assert.equal(again.coverageState, 'Submitted and indexed');
 });

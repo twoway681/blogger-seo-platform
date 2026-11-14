@@ -181,8 +181,12 @@ router.post('/posts/:id/publish', requireAuth, async (req, res) => {
         mode === 'schedule' ? new Date(scheduledAt).toISOString() : null,
         JSON.stringify(analysis), JSON.stringify({ payload, canonicalUrl, result }), post.id);
 
-    // Blueprint: "instant URL inspection/pinging upon publish" - request indexing
-    // for the live post URL (tolerant: never fails the publish itself).
+    // On publish, do the two things Google actually supports for blog posts:
+    // resubmit the sitemap (a discovery hint only - sitemaps never guarantee
+    // crawling or indexing) and inspect the live URL to record Google's OBSERVED
+    // index status. No indexing request is made: the Indexing API is restricted
+    // to JobPosting and livestream BroadcastEvent pages. Tolerant: never fails
+    // the publish itself.
     let indexing = null;
     const postUrl = result && result.url;
     if (postUrl && mode === 'publish') {
@@ -190,14 +194,16 @@ router.post('/posts/:id/publish', requireAuth, async (req, res) => {
         const blog = db.prepare('SELECT url FROM blogs WHERE id = ? AND user_id = ?').get(post.blogId, req.user.id);
         const scRow = db.prepare('SELECT site_url FROM search_console WHERE blog_id = ? AND user_id = ?').get(post.blogId, req.user.id);
         const siteUrl = scRow ? scRow.site_url : blog.url.replace(/\/$/, '') + '/';
-        const insp = await sc.inspectUrl(req.user, siteUrl, postUrl, saveTokens(req.user.id), { submit: true });
+        const sitemap = await sc.submitSitemap(req.user, siteUrl, `${siteUrl}sitemap.xml`, saveTokens(req.user.id));
+        const sitemapHintAt = (sitemap && sitemap.lastSubmitted) || new Date().toISOString();
+        const insp = await sc.inspectUrl(req.user, siteUrl, postUrl, saveTokens(req.user.id));
         const st = ((insp.inspectionResult || {}).indexStatusResult || {});
-        db.prepare(`INSERT INTO indexing (url, blog_id, user_id, coverage_state, last_crawl_time, result_json, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+        db.prepare(`INSERT INTO indexing (url, blog_id, user_id, coverage_state, last_crawl_time, sitemap_hint_at, result_json, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
           ON CONFLICT(url) DO UPDATE SET coverage_state=excluded.coverage_state, last_crawl_time=excluded.last_crawl_time,
-            result_json=excluded.result_json, updated_at=excluded.updated_at`)
-          .run(postUrl, post.blogId, req.user.id, st.coverageState || null, st.lastCrawlTime || null, JSON.stringify(insp));
-        indexing = { url: postUrl, coverageState: st.coverageState || 'unknown' };
+            sitemap_hint_at=excluded.sitemap_hint_at, result_json=excluded.result_json, updated_at=excluded.updated_at`)
+          .run(postUrl, post.blogId, req.user.id, st.coverageState || null, st.lastCrawlTime || null, sitemapHintAt, JSON.stringify(insp));
+        indexing = { url: postUrl, sitemapHintAt, coverageState: st.coverageState || 'unknown' };
       } catch (err) {
         indexing = { url: postUrl, error: err.message };
       }
@@ -299,24 +305,24 @@ router.post('/searchconsole/:blogId/setup', requireAuth, async (req, res) => {
   }
 });
 
-// URL inspection: check index status, or request indexing (submit=true) - the
-// publish-time ping from the blueprint ("instant URL inspection/pinging upon publish").
+// URL inspection: read-only observation of Google's index status for a URL.
+// (Submission nudges happen through sitemap resubmission, never through this endpoint.)
 router.post('/searchconsole/:blogId/inspect', requireAuth, async (req, res) => {
-  const { url, submit } = req.body || {};
+  const { url } = req.body || {};
   if (!url) return res.status(400).json({ error: 'url required' });
   const scRow = db.prepare('SELECT site_url FROM search_console WHERE blog_id = ? AND user_id = ?').get(req.params.blogId, req.user.id);
   const blog = db.prepare('SELECT url FROM blogs WHERE id = ? AND user_id = ?').get(req.params.blogId, req.user.id);
   const siteUrl = scRow ? scRow.site_url : blog ? blog.url.replace(/\/$/, '') + '/' : null;
   if (!siteUrl) return res.status(404).json({ error: 'blog_not_found' });
   try {
-    const result = await sc.inspectUrl(req.user, siteUrl, url, saveTokens(req.user.id), { submit: Boolean(submit) });
+    const result = await sc.inspectUrl(req.user, siteUrl, url, saveTokens(req.user.id));
     const status = ((result.inspectionResult || {}).indexStatusResult || {});
     db.prepare(`INSERT INTO indexing (url, blog_id, user_id, coverage_state, last_crawl_time, result_json, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
       ON CONFLICT(url) DO UPDATE SET coverage_state=excluded.coverage_state, last_crawl_time=excluded.last_crawl_time,
         result_json=excluded.result_json, updated_at=excluded.updated_at`)
       .run(url, req.params.blogId, req.user.id, status.coverageState || null, status.lastCrawlTime || null, JSON.stringify(result));
-    res.json({ url, coverageState: status.coverageState || 'unknown', submitted: Boolean(submit), result });
+    res.json({ url, coverageState: status.coverageState || 'unknown', result });
   } catch (err) {
     res.status(502).json({ error: 'inspection_failed', message: err.message });
   }

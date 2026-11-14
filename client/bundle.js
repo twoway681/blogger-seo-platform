@@ -23713,7 +23713,7 @@ ${prefix}
       <div class="hint sc-status" style="margin-top:0.5rem">Search Console: ...</div>
       <div style="display:flex;gap:0.5rem;margin-top:0.7rem">
         <button class="btn-primary">New post</button>
-        <button class="btn-ghost sc-setup">Set up indexing</button>
+        <button class="btn-ghost sc-setup">Set up Search Console</button>
       </div></div>`);
       card.querySelector(".btn-primary").onclick = () => newPost(b);
       const statusEl = card.querySelector(".sc-status");
@@ -23731,7 +23731,7 @@ ${prefix}
         statusEl.textContent = "Search Console: verifying + submitting sitemap...";
         try {
           const r = await api(`/searchconsole/${b.id}/setup`, { method: "POST", body: {} });
-          toast(`Indexing set up: ${r.sitemapUrl} submitted`);
+          toast(`Search Console ready - sitemap submitted: ${r.sitemapUrl}`);
         } catch (e) {
           toast(`Setup failed: ${e.message}`);
         }
@@ -24188,7 +24188,7 @@ Reddit: ${d.intentUrls.reddit}`, null);
       if (res.dryRun) {
         toast("Dry run complete - payload built, nothing sent. Use View payload to inspect it.");
       } else if (res.result && res.result.url) {
-        toast(`Published: ${res.result.url}${res.indexing && res.indexing.coverageState ? " - indexing: " + res.indexing.coverageState : ""}`);
+        toast(`Published: ${res.result.url}${res.indexing && res.indexing.coverageState ? " - sitemap hint sent, observed status: " + res.indexing.coverageState : ""}`);
       } else {
         toast(mode === "draft" ? "Saved as a Blogger draft." : `Status: ${res.status}`);
       }

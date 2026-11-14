@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS indexing (
   user_id TEXT NOT NULL,
   coverage_state TEXT,
   last_crawl_time TEXT,
+  sitemap_hint_at TEXT,
   result_json TEXT,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -91,5 +92,8 @@ CREATE TABLE IF NOT EXISTS images (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 `);
+
+// Lightweight migrations for databases created before a column existed.
+try { db.exec('ALTER TABLE indexing ADD COLUMN sitemap_hint_at TEXT'); } catch { /* column already present */ }
 
 module.exports = db;

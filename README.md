@@ -125,9 +125,15 @@ See `docs/MODULES.md`. In short:
 - **Property verification + sitemap submission** - runs automatically the first time a
   blog is seen (`GET /api/blogs`), and on demand via `POST /api/searchconsole/:blogId/setup`.
   Submits `https://<blog>/sitemap.xml`, which every Blogger blog exposes natively.
-- **URL inspection + indexing ping on publish** - every publish requests indexing for the
-  live post URL and records the coverage state (`indexing` table); manual checks via
-  `POST /api/searchconsole/:blogId/inspect`.
+- **Sitemap resubmission + URL inspection on publish** - every publish resubmits the
+  sitemap (a discovery hint only; sitemaps never guarantee crawling or indexing) and
+  inspects the live post URL to record Google's *observed* coverage state (`indexing`
+  table, with the sitemap hint time stored separately from the observed status).
+  Manual checks via `POST /api/searchconsole/:blogId/inspect` (read-only).
+  There is deliberately **no "request indexing" call**: Google's Indexing API is
+  restricted to JobPosting and livestream BroadcastEvent pages, and even an accepted
+  notification does not confirm indexing. Submission success and observed indexed
+  status are always reported as separate facts.
 - **Fake provider** for demo mode simulates the whole lifecycle offline; the real client
   (`googleClient.js`) rides the same OAuth session. Scope is now
   `webmasters` (read/write) - if you already consented with the old readonly scope,

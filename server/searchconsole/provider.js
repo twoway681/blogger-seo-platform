@@ -35,8 +35,13 @@ async function listSitemaps(user, siteUrl, saveTokens) {
   return withToken(user, saveTokens, (t) => googleSc.listSitemaps(t, siteUrl));
 }
 
-async function inspectUrl(user, siteUrl, url, saveTokens, opts = {}) {
-  if (!isGoogle()) return fake.inspectUrl(siteUrl, url, opts);
+// URL Inspection is strictly read-only observation of Google's index status.
+// There is no supported way to request indexing for blog posts: Google's Indexing
+// API is restricted to JobPosting and livestream BroadcastEvent pages, and even an
+// accepted notification there does not confirm indexing. Discovery nudges happen
+// through submitSitemap only.
+async function inspectUrl(user, siteUrl, url, saveTokens) {
+  if (!isGoogle()) return fake.inspectUrl(siteUrl, url);
   return withToken(user, saveTokens, (t) => googleSc.inspectUrl(t, siteUrl, url));
 }
 
