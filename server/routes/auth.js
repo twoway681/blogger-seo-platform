@@ -20,7 +20,7 @@ function createSession(userId) {
 }
 
 function setSessionCookie(res, sid) {
-  res.cookie(SESSION_COOKIE, sid, { httpOnly: true, sameSite: 'lax', maxAge: SESSION_TTL_MS });
+  res.cookie(SESSION_COOKIE, sid, { httpOnly: true, sameSite: 'lax', secure: config.baseUrl.startsWith('https:'), maxAge: SESSION_TTL_MS });
 }
 
 function currentUser(req) {

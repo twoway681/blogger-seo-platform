@@ -9,6 +9,43 @@ const api = require('./routes/api');
 function createApp() {
   const app = express();
   app.disable('x-powered-by');
+
+  // Baseline security headers on every response. CSP allows inline script/style
+  // because the client renders rows with inline handlers; object/embed are off.
+  app.use((req, res, next) => {
+    res.set({
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
+      'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+      'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+    });
+    next();
+  });
+
+  // Small fixed-window in-memory rate limiter - no external service needed.
+  // Buckets: auth (OAuth start/callback) and general API. Single-process MVP
+  // scope; a multi-instance deployment would move this to the edge (Cloudflare).
+  const buckets = new Map(); // key -> { count, resetAt }
+  function rateLimit({ windowMs, max, keyFn }) {
+    return (req, res, next) => {
+      const now = Date.now();
+      const key = keyFn(req);
+      let b = buckets.get(key);
+      if (!b || now > b.resetAt) { b = { count: 0, resetAt: now + windowMs }; buckets.set(key, b); }
+      b.count += 1;
+      if (buckets.size > 10000) { for (const [k, v] of buckets) if (now > v.resetAt) buckets.delete(k); }
+      if (b.count > max) {
+        res.set('Retry-After', String(Math.ceil((b.resetAt - now) / 1000)));
+        return res.status(429).json({ error: 'rate_limited', retryAfterSeconds: Math.ceil((b.resetAt - now) / 1000) });
+      }
+      next();
+    };
+  }
+  const ip = (req) => req.ip || req.socket.remoteAddress || 'unknown';
+  app.use('/auth', rateLimit({ windowMs: 10 * 60 * 1000, max: 60, keyFn: (req) => `auth:${ip(req)}` }));
+  app.use('/api', rateLimit({ windowMs: 60 * 1000, max: 240, keyFn: (req) => `api:${ip(req)}` }));
+
   app.use(express.json({ limit: '2mb' }));
   app.use(cookieParser());
 

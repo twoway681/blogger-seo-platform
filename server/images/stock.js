@@ -117,13 +117,22 @@ const unsplash = {
   async fetch(result, { fetchImpl = fetch } = {}) {
     const res = await fetchImpl(assertProviderUrl(result._url, 'images.unsplash.com'));
     if (!res.ok) throw new Error(`unsplash download failed: HTTP ${res.status}`);
-    const buffer = Buffer.from(await res.arrayBuffer());
+    const buffer = await boundedBuffer(res);
     return { buffer, originalName: `${result.id}.jpg`, alt: result.altText, credit: result.credit };
   },
 };
 
 // Only fetch from the provider's own CDN host - the insert endpoint receives the
 // result object back from the client, so the download URL must be re-validated.
+const MAX_DOWNLOAD_BYTES = 30 * 1024 * 1024;
+async function boundedBuffer(res) {
+  const len = Number(res.headers.get('content-length') || 0);
+  if (len > MAX_DOWNLOAD_BYTES) throw new Error('image download too large');
+  const buffer = Buffer.from(await res.arrayBuffer());
+  if (buffer.length > MAX_DOWNLOAD_BYTES) throw new Error('image download too large');
+  return buffer;
+}
+
 function assertProviderUrl(url, host) {
   let parsed;
   try { parsed = new URL(String(url || '')); } catch { throw new Error('invalid image url'); }
@@ -154,7 +163,7 @@ const pexels = {
   async fetch(result, { fetchImpl = fetch } = {}) {
     const res = await fetchImpl(assertProviderUrl(result._url, 'images.pexels.com'));
     if (!res.ok) throw new Error(`pexels download failed: HTTP ${res.status}`);
-    const buffer = Buffer.from(await res.arrayBuffer());
+    const buffer = await boundedBuffer(res);
     return { buffer, originalName: `${result.id}.jpg`, alt: result.altText, credit: result.credit };
   },
 };
@@ -183,7 +192,12 @@ async function fetchPhoto(result, opts = {}) {
   if (!result || !result.provider) throw new Error('missing stock photo result');
   if (result.provider === 'demo') {
     const regen = dryRunResult(String(result.query || result.description || 'blog photo').toLowerCase(), Number(result.index) || 0);
-    const merged = { ...regen, ...result, _palette: result._palette || regen._palette };
+    // Never trust client-supplied dimensions: the SVG is rasterized at these
+    // sizes, so an oversized width/height would be a memory-DoS. Regenerated
+    // values win; clamp for good measure.
+    const merged = { ...regen, ...result, width: regen.width, height: regen.height, _palette: regen._palette };
+    merged.width = Math.min(Math.max(Number(merged.width) || 1600, 1), 2048);
+    merged.height = Math.min(Math.max(Number(merged.height) || 900, 1), 2048);
     merged.altText = autoAlt(result.altText || regen.description, regen.query);
     return dryRun.fetch(merged, opts);
   }
