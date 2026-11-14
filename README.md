@@ -165,3 +165,20 @@ Blogs still on a free `*.blogspot.com` subdomain see a persistent dashboard bann
 ## Design system
 
 The UI is a custom "paper & ink" editorial design: Fraunces serif for the writing surface and headings, Inter for UI chrome, a forest-green accent on warm paper, and a hand-drawn-style pen-nib logo (`client/logo.svg`). Checklist items are grouped (Foundations, Focus keyword, Meta, Images, Links, AI search) with per-group pass counts, and the whole theme is tokenized in `client/styles.css` under `:root`.
+
+## AEO features: llms.txt + Q&A blocks
+
+Two answer-engine optimization tools live alongside the GEO checklist:
+
+- **llms.txt generator** (`server/aeo/llmstxt.js`, `GET /api/blogs/:blogId/llms.txt`) -
+  builds an [llms.txt](https://llmstxt.org) file from the blog's live posts (title, link,
+  one-line summary) so AI crawlers and assistants can understand and cite the blog.
+  Dashboard blog cards have an **llms.txt** button to preview, copy or download it.
+  Blogger cannot host root files, so serve it from wherever Blogsmith is deployed
+  (or any static host); drafts are never included.
+- **Q&A block suggestions** (`server/aeo/qa.js`, `POST /api/qa/suggest`) - derives
+  question-and-answer pairs from the post's own sections, phrased the way people ask
+  AI engines ("What to pack" -> "What should I pack?"). The editor's **Suggest Q&A
+  block** button previews the pairs and inserts them as visible content at the end of
+  the post. No FAQ schema is emitted - Google retired FAQ rich results for most sites;
+  clear visible Q&A is what AI engines quote.

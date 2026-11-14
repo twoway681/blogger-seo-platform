@@ -23714,8 +23714,10 @@ ${prefix}
       <div style="display:flex;gap:0.5rem;margin-top:0.7rem">
         <button class="btn-primary">New post</button>
         <button class="btn-ghost sc-setup">Set up Search Console</button>
+        <button class="btn-ghost llms-btn">llms.txt</button>
       </div></div>`);
       card.querySelector(".btn-primary").onclick = () => newPost(b);
+      card.querySelector(".llms-btn").onclick = () => showLlmsTxt(b);
       const statusEl = card.querySelector(".sc-status");
       const refreshSc = async () => {
         try {
@@ -23797,6 +23799,47 @@ ${prefix}
       wrap2.innerHTML = '<div class="empty">Could not load templates.</div>';
     }
   }
+  async function showLlmsTxt(blog) {
+    const modal = el(`<div class="modal-backdrop"><div class="modal">
+    <h3>llms.txt - ${esc(blog.name || "blog")}</h3>
+    <p class="hint">A file that tells AI crawlers (ChatGPT, Gemini, Claude, Perplexity) what this blog covers and which posts to cite. Generated live from your published posts. Blogger can't host root files, so serve it from wherever Blogsmith is deployed, or paste it into any static host.</p>
+    <pre style="white-space:pre-wrap" id="llms-body">Loading...</pre>
+    <div class="row">
+      <button class="btn-ghost" id="llms-copy">Copy</button>
+      <button class="btn-primary" id="llms-dl">Download llms.txt</button>
+      <button class="btn-ghost" id="close-modal">Close</button>
+    </div></div></div>`);
+    document.body.appendChild(modal);
+    const close2 = () => modal.remove();
+    modal.querySelector("#close-modal").onclick = close2;
+    modal.onclick = (e) => {
+      if (e.target === modal) close2();
+    };
+    let text = "";
+    try {
+      const res = await fetch(`/api/blogs/${encodeURIComponent(blog.id)}/llms.txt`);
+      text = await res.text();
+      if (!res.ok) throw new Error(text);
+    } catch (e) {
+      text = `Could not generate llms.txt: ${e.message}`;
+    }
+    modal.querySelector("#llms-body").textContent = text;
+    modal.querySelector("#llms-copy").onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(text);
+        toast("llms.txt copied");
+      } catch {
+        toast("Copy failed - select the text manually");
+      }
+    };
+    modal.querySelector("#llms-dl").onclick = () => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+      a.download = "llms.txt";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    };
+  }
   async function showInstallSteps(url) {
     const md = await fetch(url || "/templates/INSTALL.md").then((r) => r.text()).catch(() => "Install guide unavailable.");
     const modal = el(`<div class="modal-backdrop"><div class="modal">
@@ -23836,6 +23879,7 @@ ${prefix}
           <input type="datetime-local" id="schedule-at" title="Schedule date/time" />
           <button class="btn-ghost" id="pub-schedule">Schedule</button>
           <button class="btn-ghost" id="suggest-links">Suggest links</button>
+          <button class="btn-ghost" id="qa-suggest">Suggest Q&amp;A block</button>
           <button class="btn-ghost" id="repurpose">Repurpose for social</button>
           <button class="btn-ghost" id="view-payload">View payload</button>
           <span class="save-state" id="save-state"></span>
@@ -23902,6 +23946,7 @@ ${prefix}
     };
     document.getElementById("view-payload").onclick = showPayload;
     document.getElementById("suggest-links").onclick = suggestLinks;
+    document.getElementById("qa-suggest").onclick = qaSuggest;
     document.getElementById("repurpose").onclick = repurposeModal;
     document.getElementById("kw-ideas").onclick = keywordIdeas;
     document.getElementById("kw-research").onclick = keywordResearch;
@@ -24090,6 +24135,50 @@ ${prefix}
     } catch (e) {
       list.innerHTML = `<div class="hint" style="padding:0.4rem 0">Research failed: ${esc(e.message)}</div>`;
     }
+  }
+  async function qaSuggest() {
+    const f = currentFields();
+    if (!f.html || f.html.replace(/<[^>]+>/g, "").trim().split(/\s+/).length < 30) return toast("Write a bit more body text first");
+    const modal = el(`<div class="modal-backdrop"><div class="modal">
+    <h3>Q&amp;A block - how readers ask AI</h3>
+    <p class="hint">Question-and-answer pairs written from your own sections, phrased the way people ask ChatGPT and Gemini. Inserted as visible content (no FAQ schema - Google retired it). AI engines quote clear Q&amp;A pairs like these.</p>
+    <div id="qa-list"><div class="hint" style="padding:0.4rem 0">Thinking...</div></div>
+    <div class="row">
+      <button class="btn-primary" id="qa-insert" disabled>Insert at end of post</button>
+      <button class="btn-ghost" id="close-modal">Close</button>
+    </div></div></div>`);
+    document.body.appendChild(modal);
+    const close2 = () => modal.remove();
+    modal.querySelector("#close-modal").onclick = close2;
+    modal.onclick = (e) => {
+      if (e.target === modal) close2();
+    };
+    let suggestions = [];
+    try {
+      const data = await api("/qa/suggest", { method: "POST", body: f });
+      suggestions = data.suggestions || [];
+    } catch (e) {
+    }
+    const list = modal.querySelector("#qa-list");
+    list.innerHTML = "";
+    if (!suggestions.length) {
+      list.innerHTML = '<div class="empty">No Q&amp;A pairs found yet - add an answer-first opening and a few H2 sections with real paragraphs.</div>';
+      return;
+    }
+    for (const s of suggestions) {
+      list.appendChild(el(`<div class="check"><span class="dot pass"></span>
+      <div><div class="label">${esc(s.question)}</div><div class="detail">${esc(s.answer)}</div></div></div>`));
+    }
+    const insertBtn = modal.querySelector("#qa-insert");
+    insertBtn.disabled = false;
+    insertBtn.onclick = () => {
+      const block = "<h2>Questions readers ask</h2>" + suggestions.map((s) => `<h3>${esc(s.question)}</h3><p>${esc(s.answer)}</p>`).join("");
+      state.editor.chain().focus().insertContentAt(state.editor.state.doc.content.size, block).run();
+      markDirty();
+      scheduleAnalyze();
+      close2();
+      toast("Q&A block added at the end of the post");
+    };
   }
   async function suggestLinks() {
     await save();

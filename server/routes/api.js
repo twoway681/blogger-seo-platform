@@ -6,6 +6,8 @@ const config = require('../config');
 const provider = require('../blogger/provider');
 const { requireAuth, saveTokens, newId } = require('./auth');
 const { analyzePost } = require('../seo/analyzer');
+const { generateLlmsTxt } = require('../aeo/llmstxt');
+const { suggestQa } = require('../aeo/qa');
 const { composePostPayload } = require('../seo/compose');
 const { processImage } = require('../images/pipeline');
 const { suggestKeywords, researchKeywords } = require('../keywords/provider');
@@ -116,6 +118,20 @@ router.post('/seo/analyze', requireAuth, (req, res) => {
   const { title, html, metaDescription, focusKeyword, blogId } = req.body || {};
   const siteUrl = blogId ? blogUrlFor(req.user.id, String(blogId)) : '';
   res.json(analyzePost({ title, html, metaDescription, focusKeyword, siteUrl }));
+});
+
+// --- AEO: llms.txt + Q&A suggestions (visible content; no retired FAQ schema) --
+router.get('/blogs/:blogId/llms.txt', requireAuth, (req, res) => {
+  const blog = db.prepare('SELECT * FROM blogs WHERE id = ? AND user_id = ?').get(req.params.blogId, req.user.id);
+  if (!blog) return res.status(404).json({ error: 'blog_not_found' });
+  const posts = db.prepare(`SELECT title, html, meta_description, status, published_url FROM posts
+    WHERE blog_id = ? AND user_id = ? ORDER BY updated_at DESC`).all(req.params.blogId, req.user.id);
+  res.type('text/plain').send(generateLlmsTxt({ blog, posts }));
+});
+
+router.post('/qa/suggest', requireAuth, (req, res) => {
+  const { title, html, focusKeyword } = req.body || {};
+  res.json({ suggestions: suggestQa({ title, html, focusKeyword }) });
 });
 
 // --- Image pipeline ----------------------------------------------------
