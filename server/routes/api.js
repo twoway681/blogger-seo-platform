@@ -6,6 +6,8 @@ const config = require('../config');
 const provider = require('../blogger/provider');
 const { requireAuth, saveTokens, newId } = require('./auth');
 const { analyzePost } = require('../seo/analyzer');
+const { lintHtml } = require('../seo/lint');
+const stock = require('../images/stock');
 const { generateLlmsTxt } = require('../aeo/llmstxt');
 const { suggestQa } = require('../aeo/qa');
 const { composePostPayload } = require('../seo/compose');
@@ -132,6 +134,41 @@ router.get('/blogs/:blogId/llms.txt', requireAuth, (req, res) => {
 router.post('/qa/suggest', requireAuth, (req, res) => {
   const { title, html, focusKeyword } = req.body || {};
   res.json({ suggestions: suggestQa({ title, html, focusKeyword }) });
+});
+
+// --- Writing quality lint (research build-now: local readability/grammar) ------
+router.post('/seo/lint', requireAuth, (req, res) => {
+  const { title, html } = req.body || {};
+  res.json(lintHtml({ title, html }));
+});
+
+// --- Stock photo picker (research build-now: stock images + auto alt text) ----
+router.get('/stock/search', requireAuth, async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (!q) return res.json({ provider: stock.provider().name, configured: stock.provider().configured, results: [] });
+    const data = await stock.searchPhotos(q);
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: 'stock_provider_error', message: err.message });
+  }
+});
+
+// Insert the chosen photo: download (or generate, in demo mode) and run it through
+// the same compression pipeline as manual uploads, with the auto alt text applied.
+router.post('/stock/insert', requireAuth, async (req, res) => {
+  try {
+    const { photo, alt } = req.body || {};
+    if (!photo || !photo.provider) return res.status(400).json({ error: 'photo result required' });
+    const fetched = await stock.fetchPhoto(photo);
+    const finalAlt = String(alt || fetched.alt || '');
+    const result = await processImage({ buffer: fetched.buffer, originalName: fetched.originalName, alt: finalAlt, userId: req.user.id });
+    db.prepare('INSERT INTO images (id, user_id, original_name, mime_in, bytes_in, alt, variants_json) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(result.id, req.user.id, fetched.originalName, 'image/stock', result.bytesIn, finalAlt, JSON.stringify(result.variants));
+    res.status(201).json({ id: result.id, alt: finalAlt, credit: fetched.credit || '', bytesIn: result.bytesIn, variants: result.variants, html: result.html });
+  } catch (err) {
+    res.status(500).json({ error: 'stock_insert_error', message: err.message });
+  }
 });
 
 // --- Image pipeline ----------------------------------------------------

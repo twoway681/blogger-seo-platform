@@ -152,3 +152,14 @@ h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; color: var(--ink)
 .notice p { margin: 0.25rem 0; color: var(--ink-soft); font-size: 0.85rem; line-height: 1.55; }
 .notice .hint { font-size: 0.78rem; }
 .notice ol { margin: 0.45rem 0 0.25rem 1.15rem; font-size: 0.83rem; color: var(--ink-soft); line-height: 1.65; }
+
+/* stock photo picker */
+.modal-wide { width: min(760px, 94vw); }
+.stock-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.7rem; }
+.stock-tile { cursor: pointer; border: 2px solid transparent; border-radius: 10px; overflow: hidden; transition: border-color 0.15s; }
+.stock-tile:hover { border-color: var(--accent, #2f6b4f); }
+.stock-tile img { width: 100%; height: 110px; object-fit: cover; display: block; }
+.stock-tile .stock-alt { font-size: 0.72rem; color: var(--muted); padding: 0.35rem 0.45rem; line-height: 1.3; background: var(--surface2); }
+.stock-picked img { width: 100%; max-height: 280px; object-fit: cover; border-radius: 10px; margin-bottom: 0.7rem; }
+.stock-picked label { display: block; font-size: 0.78rem; font-weight: 600; color: var(--muted); margin-bottom: 0.3rem; }
+.stock-picked input { width: 100%; }
