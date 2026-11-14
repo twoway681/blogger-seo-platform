@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html>
+<html b:css='false' b:defaultwidgetversion='2' b:layoutsVersion='3' b:responsive='true' b:templateUrl='paper.xml' b:templateVersion='1.0.0' expr:dir='data:blog.languageDirection' xmlns='http://www.w3.org/1999/xhtml' xmlns:b='http://www.google.com/2005/gml/b' xmlns:data='http://www.google.com/2005/gml/data' xmlns:expr='http://www.google.com/2005/gml/expr'>
+<head>
+  <meta charset='utf-8'/>
+  <meta content='width=device-width, initial-scale=1' name='viewport'/>
+  <title><data:blog.pageTitle/></title>
+  <b:include data='blog' name='all-head-content'/>
+  <b:skin><![CDATA[
+/* Variable definitions
+<Group description="Colors" selector="body">
+<Variable name="keycolor" description="Accent color" type="color" default="#8a4b08" value="#8a4b08"/>
+<Variable name="page.background" description="Page background" type="color" default="#fbf9f4" value="#fbf9f4"/>
+<Variable name="text.color" description="Text color" type="color" default="#26221c" value="#26221c"/>
+</Group>
+*/
+
+/* Paper - quiet serif reading theme. Zero JS, zero external requests. */
+
+:root{
+  --accent:$(keycolor);
+  --bg:$(page.background);
+  --text:$(text.color);
+  --muted:#7a7166;
+  --border:#e5ded2;
+  --soft:#f3efe6;
+  --serif:Georgia,"Iowan Old Style","Times New Roman",serif;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font:1.0625rem/1.7 var(--serif);
+}
+.wrap{max-width:40rem;margin-inline:auto;padding-inline:1.25rem}
+a{color:var(--accent);text-decoration:underline;text-underline-offset:.15em;text-decoration-thickness:1px}
+a:hover{text-decoration-thickness:2px}
+img{max-width:100%;height:auto}
+
+.site-header{border-bottom:1px solid var(--border);padding-block:1.5rem}
+.header-inner{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem 1.5rem}
+.site-title{font-size:1.5rem;font-weight:700;line-height:1.2;margin:0;letter-spacing:-.01em}
+.site-title a{color:inherit;text-decoration:none}
+.pages-section ul{display:flex;flex-wrap:wrap;gap:0 1.25rem;list-style:none;margin:0;padding:0}
+.pages-section a{color:var(--muted);font-size:.9375rem;text-decoration:none}
+.pages-section a:hover{text-decoration:underline}
+.search-form{margin-inline-start:auto}
+.search-form input{
+  max-width:9.5rem;padding:.35rem .6rem;font:inherit;font-size:.9rem;
+  border:1px solid var(--border);border-radius:.25rem;background:#fff;color:var(--text);
+}
+
+.site-main{padding-block:1.5rem 2.5rem}
+.results-note{color:var(--muted);font-size:.9375rem;font-style:italic}
+
+.post-summary{padding-block:1.75rem;border-bottom:1px solid var(--border)}
+.post-summary:last-of-type{border-bottom:0}
+.post-title{font-size:1.625rem;line-height:1.25;margin:.25rem 0;letter-spacing:-.01em}
+.post-title a{color:inherit;text-decoration:none}
+.post-title a:hover{text-decoration:underline}
+.post-meta{color:var(--muted);font-size:.85rem;margin:.25rem 0 .75rem;font-style:italic}
+.post-labels a{margin-inline-start:.5rem;font-style:normal}
+.post-thumb{display:block;margin-bottom:.75rem}
+.post-thumb img{display:block;width:100%}
+.post-snippet{color:#4a443b}
+
+.post-full .post-title{font-size:2.125rem}
+.post-body{overflow-wrap:break-word}
+.post-body blockquote{
+  margin-inline:0;padding-inline-start:1.25rem;font-style:italic;
+  border-inline-start:3px solid var(--border);color:var(--muted);
+}
+.post-body pre{overflow-x:auto;padding:1rem;background:var(--soft);border:1px solid var(--border);font-size:.875rem}
+.post-body table{border-collapse:collapse;display:block;overflow-x:auto}
+.post-body th,.post-body td{border:1px solid var(--border);padding:.4rem .7rem}
+.read-more{font-weight:700}
+
+.pager{display:flex;justify-content:space-between;gap:1rem;padding-block:1.5rem}
+
+.comments{margin-top:2.5rem;padding-top:1rem;border-top:1px solid var(--border)}
+.comment-form input[type="text"],.comment-form textarea{max-width:100%}
+#comment-editor{width:100% !important;max-width:100%}
+
+.site-footer{
+  border-top:1px solid var(--border);color:var(--muted);
+  font-size:.85rem;padding-block:1.5rem;text-align:center;font-style:italic;
+}
+
+@media (min-width:48rem){
+  body{font-size:1.125rem}
+  .post-title{font-size:1.75rem}
+  .post-full .post-title{font-size:2.375rem}
+}
+]]></b:skin>
+</head>
+<body expr:class='data:blog.pageType'>
+  <header class='site-header'>
+    <div class='wrap header-inner'>
+      <b:section class='header-section' id='header' maxwidgets='1' showaddelement='no'>
+        <b:widget id='Header1' locked='true' title='Site header' type='Header' version='2'>
+          <b:includable id='main'>
+            <b:if cond='data:blog.url == data:blog.homepageUrl'>
+              <h1 class='site-title'><a expr:href='data:blog.homepageUrl'><data:blog.title/></a></h1>
+            <b:else/>
+              <p class='site-title'><a expr:href='data:blog.homepageUrl'><data:blog.title/></a></p>
+            </b:if>
+          </b:includable>
+        </b:widget>
+      </b:section>
+      <b:section class='pages-section' id='pages' maxwidgets='1' showaddelement='no'>
+        <b:widget id='PageList1' locked='false' title='Pages' type='PageList' version='2'/>
+      </b:section>
+      <form class='search-form' expr:action='data:blog.homepageUrl + "search"' method='get' role='search'>
+        <input aria-label='Search posts' name='q' placeholder='Search' type='search'/>
+      </form>
+    </div>
+  </header>
+
+  <main class='wrap site-main' id='content'>
+    <b:section class='main-section' id='main-posts' showaddelement='no'>
+      <b:widget id='Blog1' locked='true' title='Blog Posts' type='Blog' version='2'>
+        <b:includable id='main'>
+          <b:if cond='data:blog.searchQuery'>
+            <p class='results-note'>Search results for &#8220;<data:blog.searchQuery/>&#8221;</p>
+          </b:if>
+          <b:if cond='data:blog.pageType == "item" or data:blog.pageType == "static_page"'>
+            <b:loop values='data:posts' var='post'>
+              <b:include data='post' name='post-full'/>
+            </b:loop>
+          <b:else/>
+            <b:loop values='data:posts' var='post'>
+              <b:include data='post' name='post-summary'/>
+            </b:loop>
+          </b:if>
+          <nav aria-label='Pagination' class='pager'>
+            <span>
+              <b:if cond='data:newerPageUrl'>
+                <a class='pager-newer' expr:href='data:newerPageUrl'>&#8592; Newer posts</a>
+              </b:if>
+            </span>
+            <span>
+              <b:if cond='data:olderPageUrl'>
+                <a class='pager-older' expr:href='data:olderPageUrl'>Older posts &#8594;</a>
+              </b:if>
+            </span>
+          </nav>
+        </b:includable>
+        <b:includable id='post-summary' var='post'>
+          <article class='post post-summary'>
+            <b:if cond='data:post.featuredImage'>
+              <a class='post-thumb' expr:href='data:post.url' tabindex='-1'>
+                <img expr:alt='data:post.title' expr:src='data:post.featuredImage' loading='lazy'/>
+              </a>
+            </b:if>
+            <h2 class='post-title'>
+              <b:if cond='data:post.link'>
+                <a expr:href='data:post.link'><data:post.title/></a>
+              <b:else/>
+                <a expr:href='data:post.url'><data:post.title/></a>
+              </b:if>
+            </h2>
+            <p class='post-meta'><time><data:post.dateHeader/></time></p>
+            <div class='post-snippet'><data:post.snippets.long/></div>
+            <a class='read-more' expr:href='data:post.url'>Continue reading</a>
+          </article>
+        </b:includable>
+        <b:includable id='post-full' var='post'>
+          <article class='post post-full'>
+            <h1 class='post-title'><data:post.title/></h1>
+            <p class='post-meta'>
+              <time><data:post.dateHeader/></time>
+              <b:if cond='data:post.labels'>
+                <span class='post-labels'>
+                  <b:loop values='data:post.labels' var='label'>
+                    <a expr:href='data:label.url' rel='tag'><data:label.name/></a>
+                  </b:loop>
+                </span>
+              </b:if>
+            </p>
+            <div class='post-body'><data:post.body/></div>
+            <b:if cond='data:post.allowComments'>
+              <b:include data='post' name='comments'/>
+            </b:if>
+          </article>
+        </b:includable>
+      </b:widget>
+    </b:section>
+  </main>
+
+  <footer class='site-footer'>
+    <div class='wrap'>
+      <p>&#169; <data:blog.title/></p>
+    </div>
+  </footer>
+</body>
+</html>

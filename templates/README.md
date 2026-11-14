@@ -2,16 +2,17 @@
 
 Curated, SEO-clean, mobile-first Blogger XML themes live here (blueprint Phase 2).
 
-Each template = one `.xml` file plus an entry in `manifest.json`:
+Each template = a folder holding `theme.xml` plus its own README, and an entry in
+`manifest.json`:
 
 ```json
 {
-  "file": "clean-start.xml",
-  "name": "Clean Start",
-  "description": "Minimal single-column theme, zero render-blocking JS.",
+  "file": "slate/theme.xml",
+  "name": "Slate",
+  "description": "Clean minimal sans-serif on light. The default pick for general blogging.",
   "version": "1.0.0",
   "author": "BloggerSEO",
-  "previewUrl": "https://clean-start-demo.blogspot.com"
+  "guide": "slate/README.md"
 }
 ```
 

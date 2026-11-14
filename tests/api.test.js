@@ -102,8 +102,13 @@ test('blogs list, draft CRUD, SEO analyze, image upload, publish + payload audit
 
 test('templates, links suggest and keywords endpoints work in demo mode', async () => {
   const tpl = await json(await call('GET', '/api/templates'));
-  assert.deepEqual(tpl.items, []);
+  assert.equal(tpl.items.length, 4);
+  assert.ok(tpl.items.every((t) => t.available && t.downloadUrl.startsWith('/templates/')));
+  assert.deepEqual(tpl.items.map((t) => t.name), ['Slate', 'Paper', 'Pulse', 'Mono']);
   assert.ok(tpl.installGuideUrl);
+  const xml = await call('GET', '/templates/slate/theme.xml');
+  assert.equal(xml.status, 200);
+  assert.ok((await xml.text()).includes('<?xml'));
 
   const links = await json(await call('POST', '/api/links/suggest', { body: { blogId: 'fake-blog-1', html: '<p>Welcome to my beginner blog journey</p>' } }));
   assert.ok(links.suggestions.find((s) => s.title === 'Welcome to my blog'), 'matches fake provider post list');

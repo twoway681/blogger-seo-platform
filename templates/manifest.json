@@ -1,1 +1,34 @@
-[]
+[
+  {
+    "file": "slate/theme.xml",
+    "name": "Slate",
+    "description": "Clean minimal sans-serif on light. The default pick for general blogging.",
+    "version": "1.0.0",
+    "author": "BloggerSEO",
+    "guide": "slate/README.md"
+  },
+  {
+    "file": "paper/theme.xml",
+    "name": "Paper",
+    "description": "Quiet serif on a warm paper background. Best for long-form writing, essays and book blogs.",
+    "version": "1.0.0",
+    "author": "BloggerSEO",
+    "guide": "paper/README.md"
+  },
+  {
+    "file": "pulse/theme.xml",
+    "name": "Pulse",
+    "description": "Card grid with featured images and a dark header. Best for photo, food, travel and magazine blogs.",
+    "version": "1.0.0",
+    "author": "BloggerSEO",
+    "guide": "pulse/README.md"
+  },
+  {
+    "file": "mono/theme.xml",
+    "name": "Mono",
+    "description": "Terminal-inspired with automatic dark mode. Best for tech and programming blogs.",
+    "version": "1.0.0",
+    "author": "BloggerSEO",
+    "guide": "mono/README.md"
+  }
+]

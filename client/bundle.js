@@ -23742,7 +23742,7 @@ ${prefix}
           <a href="${esc(t.downloadUrl)}" download><button class="btn-primary" ${t.available ? "" : "disabled"}>Download XML</button></a>
           <button class="btn-ghost">Install steps</button>
         </div></div>`);
-        card.querySelector(".btn-ghost").onclick = showInstallSteps;
+        card.querySelector(".btn-ghost").onclick = () => showInstallSteps(t.guide ? `/templates/${t.guide}` : data.installGuideUrl);
         grid.appendChild(card);
       }
       wrap2.innerHTML = "";
@@ -23751,8 +23751,8 @@ ${prefix}
       wrap2.innerHTML = '<div class="empty">Could not load templates.</div>';
     }
   }
-  async function showInstallSteps() {
-    const md = await fetch("/templates/INSTALL.md").then((r) => r.text()).catch(() => "Install guide unavailable.");
+  async function showInstallSteps(url) {
+    const md = await fetch(url || "/templates/INSTALL.md").then((r) => r.text()).catch(() => "Install guide unavailable.");
     const modal = el(`<div class="modal-backdrop"><div class="modal">
     <h3>Installing a template</h3>
     <pre style="white-space:pre-wrap">${esc(md)}</pre>
