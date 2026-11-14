@@ -112,15 +112,22 @@ Blogger's own future-publish).
 | Background jobs (sitemap pings, social cross-posting) | Not in Phase 1 | BullMQ + free Upstash Redis, or a cron endpoint |
 | Hosting | `localhost` | Any free Node host (Render/Fly free tiers); set `BASE_URL` + OAuth redirect to match |
 
+## Module seams (already wired for parallel work streams)
+
+See `docs/MODULES.md`. In short:
+- **Templates**: drop XML + manifest entry into `templates/` -> appears in the dashboard with download + install guide (`GET /api/templates`).
+- **Keyword providers**: extend `server/keywords/provider.js` (working free Google Autocomplete implementation included) -> `GET /api/keywords/suggest` + editor "Keyword ideas" panel.
+- **Internal links / distribution**: `server/links/suggest.js` + `POST /api/links/suggest` already rank older posts from the Blogger post-list API; social modules consume the local `posts` table after publish.
+
 ## What's left (blueprint roadmap)
 
 **Phase 2 — Discovery & Indexing Engine (weeks 5-8)**
 - Search Console property verification + automatic `sitemap.xml` submission on onboarding
-- Existing-post crawler → contextual internal-link suggestions while drafting
-- Library of 3-5 fast, clean, mobile-first Blogger XML templates
+- ~~Existing-post crawler → contextual internal-link suggestions~~ (MVP version shipped: `/api/links/suggest`)
+- Library of 3-5 fast, clean, mobile-first Blogger XML templates (drop-in point ready)
 
 **Phase 3 — Growth & Monetization (weeks 9-12)**
-- Long-tail low-competition keyword finder (Google Trends / keyword data APIs)
+- Long-tail low-competition keyword finder with difficulty scoring (provider seam ready, free sources only)
 - Auto-repurposing to Pinterest pins / X threads / LinkedIn posts
 - Public "Featured Blogs Directory" backlink hub
 

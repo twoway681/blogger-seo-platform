@@ -8,6 +8,10 @@ const { requireAuth, saveTokens, newId } = require('./auth');
 const { analyzePost } = require('../seo/analyzer');
 const { composePostPayload } = require('../seo/compose');
 const { processImage } = require('../images/pipeline');
+const { suggestKeywords } = require('../keywords/provider');
+const { suggestInternalLinks } = require('../links/suggest');
+const fs = require('fs');
+const path = require('path');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
@@ -174,6 +178,44 @@ router.post('/posts/:id/publish', requireAuth, async (req, res) => {
     res.json({ ok: true, mode, dryRun, status: newStatus, result, canonicalUrl, seo: analysis });
   } catch (err) {
     res.status(502).json({ error: 'publish_failed', message: err.message });
+  }
+});
+
+// --- Template library (Phase 2 drop-in: XML files + manifest.json) ----------
+router.get('/templates', requireAuth, (req, res) => {
+  const dir = path.join(config.paths.root, 'templates');
+  let manifest = [];
+  try { manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8')); } catch { /* empty library */ }
+  const items = (Array.isArray(manifest) ? manifest : []).map((t) => ({
+    ...t,
+    downloadUrl: `/templates/${encodeURIComponent(t.file)}`,
+    available: fs.existsSync(path.join(dir, t.file)),
+  }));
+  res.json({ items, installGuideUrl: '/templates/INSTALL.md' });
+});
+
+// --- Keyword ideas (Phase 3 seam: server/keywords/provider.js) ---------------
+router.get('/keywords/suggest', requireAuth, async (req, res) => {
+  try {
+    const seed = String(req.query.q || '').trim();
+    if (!seed) return res.json({ seed, suggestions: [] });
+    const suggestions = await suggestKeywords(seed);
+    res.json({ seed, suggestions: suggestions.slice(0, 30) });
+  } catch (err) {
+    res.status(502).json({ error: 'keyword_provider_error', message: err.message });
+  }
+});
+
+// --- Internal link suggestions (Phase 2 seam: Blogger post-list API) ---------
+router.post('/links/suggest', requireAuth, async (req, res) => {
+  try {
+    const { blogId, html } = req.body || {};
+    if (!blogId) return res.status(400).json({ error: 'blogId required' });
+    const data = await provider.listPosts(req.user, String(blogId), saveTokens(req.user.id));
+    const posts = (data.items || []).map((p) => ({ title: p.title || '', url: p.url || '' }));
+    res.json({ suggestions: suggestInternalLinks({ html: html || '', posts }) });
+  } catch (err) {
+    res.status(502).json({ error: 'blogger_api_error', message: err.message });
   }
 });
 

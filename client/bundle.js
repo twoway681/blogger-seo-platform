@@ -23681,7 +23681,9 @@ ${prefix}
     <div class="section-title">Connected blogs</div>
     <div class="blog-grid" id="blogs"></div>
     <div class="section-title">Your drafts & posts</div>
-    <div id="posts"></div>`;
+    <div id="posts"></div>
+    <div class="section-title">SEO-clean Blogger templates</div>
+    <div id="templates"></div>`;
     const blogWrap = v.querySelector("#blogs");
     if (!state.blogs.length) blogWrap.innerHTML = '<div class="empty">No blogs found on this account.</div>';
     for (const b of state.blogs) {
@@ -23720,6 +23722,46 @@ ${prefix}
       tbody.appendChild(tr2);
     }
     postWrap.appendChild(table);
+    loadTemplates();
+  }
+  async function loadTemplates() {
+    const wrap2 = document.getElementById("templates");
+    if (!wrap2) return;
+    try {
+      const data = await api("/templates");
+      if (!data.items.length) {
+        wrap2.innerHTML = '<div class="empty">Template library is being curated - fast, mobile-first Blogger themes will appear here.</div>';
+        return;
+      }
+      const grid = el('<div class="blog-grid"></div>');
+      for (const t of data.items) {
+        const card = el(`<div class="blog-card">
+        <h3>${esc(t.name)}</h3><div class="url">${esc(t.description || "")}</div>
+        <div class="hint" style="margin-top:0.4rem">v${esc(t.version || "1")} by ${esc(t.author || "unknown")}</div>
+        <div style="display:flex;gap:0.5rem;margin-top:0.7rem">
+          <a href="${esc(t.downloadUrl)}" download><button class="btn-primary" ${t.available ? "" : "disabled"}>Download XML</button></a>
+          <button class="btn-ghost">Install steps</button>
+        </div></div>`);
+        card.querySelector(".btn-ghost").onclick = showInstallSteps;
+        grid.appendChild(card);
+      }
+      wrap2.innerHTML = "";
+      wrap2.appendChild(grid);
+    } catch {
+      wrap2.innerHTML = '<div class="empty">Could not load templates.</div>';
+    }
+  }
+  async function showInstallSteps() {
+    const md = await fetch("/templates/INSTALL.md").then((r) => r.text()).catch(() => "Install guide unavailable.");
+    const modal = el(`<div class="modal-backdrop"><div class="modal">
+    <h3>Installing a template</h3>
+    <pre style="white-space:pre-wrap">${esc(md)}</pre>
+    <div class="row"><button class="btn-ghost" id="close-modal">Close</button></div></div></div>`);
+    modal.querySelector("#close-modal").onclick = () => modal.remove();
+    modal.onclick = (e) => {
+      if (e.target === modal) modal.remove();
+    };
+    document.body.appendChild(modal);
   }
   async function newPost(blog) {
     const post = await api("/posts", { method: "POST", body: { blogId: blog.id, title: "" } });
@@ -23747,6 +23789,7 @@ ${prefix}
           <button class="btn-ghost" id="pub-draft">Save as Blogger draft</button>
           <input type="datetime-local" id="schedule-at" title="Schedule date/time" />
           <button class="btn-ghost" id="pub-schedule">Schedule</button>
+          <button class="btn-ghost" id="suggest-links">Suggest links</button>
           <button class="btn-ghost" id="view-payload">View payload</button>
           <span class="save-state" id="save-state"></span>
         </div>
@@ -23755,6 +23798,9 @@ ${prefix}
       <div class="seo-panel">
         <div class="seo-score" id="seo-score"></div>
         <div id="seo-checks"></div>
+        <div class="section-title" style="margin-top:1rem">Keyword ideas</div>
+        <button class="btn-ghost" id="kw-ideas" style="width:100%">Get ideas for focus keyword</button>
+        <div id="kw-list"></div>
       </div>
     </div>`;
     document.getElementById("pub-hint").textContent = state.me.livePublishingEnabled ? "LIVE publishing is enabled: Publish now posts directly to your Blogger blog." : state.me.provider === "fake" ? "Demo mode: publishing simulates the Blogger API - you can review the exact payload that would be sent." : "Dry run: the full Blogger payload is built and stored for review, but nothing is sent (set PUBLISH_MODE=live to enable).";
@@ -23807,6 +23853,8 @@ ${prefix}
       publish("schedule", when);
     };
     document.getElementById("view-payload").onclick = showPayload;
+    document.getElementById("suggest-links").onclick = suggestLinks;
+    document.getElementById("kw-ideas").onclick = keywordIdeas;
     analyze();
   }
   function buildToolbar() {
@@ -23911,6 +23959,66 @@ ${prefix}
     for (const c of checks) {
       list.appendChild(el(`<div class="check"><span class="dot ${c.status}"></span>
       <div><div class="label">${esc(c.label)}</div><div class="detail">${esc(c.detail)}</div></div></div>`));
+    }
+  }
+  async function keywordIdeas() {
+    const seed = document.getElementById("f-keyword").value.trim() || document.getElementById("f-title").value.trim();
+    if (!seed) return toast("Set a focus keyword or title first");
+    const list = document.getElementById("kw-list");
+    list.innerHTML = '<div class="hint" style="padding:0.4rem 0">Thinking...</div>';
+    try {
+      const data = await api(`/keywords/suggest?q=${encodeURIComponent(seed)}`);
+      if (!data.suggestions.length) {
+        list.innerHTML = '<div class="hint" style="padding:0.4rem 0">No ideas found for that seed.</div>';
+        return;
+      }
+      list.innerHTML = "";
+      for (const s of data.suggestions.slice(0, 12)) {
+        const item = el(`<div class="check" style="cursor:pointer"><span class="dot pass"></span>
+        <div><div class="label" style="font-weight:500">${esc(s.keyword)}</div>
+        <div class="detail">${esc(s.source)}${s.score != null ? " - difficulty " + s.score : ""}</div></div></div>`);
+        item.onclick = () => {
+          document.getElementById("f-keyword").value = s.keyword;
+          markDirty();
+          scheduleAnalyze();
+          toast(`Focus keyword set to "${s.keyword}"`);
+        };
+        list.appendChild(item);
+      }
+    } catch (e) {
+      list.innerHTML = `<div class="hint" style="padding:0.4rem 0">Keyword provider error: ${esc(e.message)}</div>`;
+    }
+  }
+  async function suggestLinks() {
+    await save();
+    try {
+      const data = await api("/links/suggest", { method: "POST", body: { blogId: state.post.blogId, html: state.editor.getHTML() } });
+      const modal = el(`<div class="modal-backdrop"><div class="modal">
+      <h3>Internal link suggestions</h3>
+      <p class="hint">Older posts on this blog that match what you're writing. Insert as a link to fix orphaned pages.</p>
+      <div id="link-list"></div>
+      <div class="row"><button class="btn-ghost" id="close-modal">Close</button></div></div></div>`);
+      const list = modal.querySelector("#link-list");
+      if (!data.suggestions.length) list.innerHTML = '<div class="empty">No strong matches yet - write more body text or publish more posts first.</div>';
+      for (const sug of data.suggestions) {
+        const row = el(`<div class="check"><span class="dot pass"></span>
+        <div style="flex:1"><div class="label">${esc(sug.title)}</div>
+        <div class="detail">${esc(sug.url)} - ${sug.score}% match</div></div>
+        <button class="btn-primary" style="flex-shrink:0">Insert link</button></div>`);
+        row.querySelector("button").onclick = () => {
+          state.editor.chain().focus().insertContent(`<a href="${sug.url}">${sug.anchor}</a> `).run();
+          modal.remove();
+          toast("Internal link inserted");
+        };
+        list.appendChild(row);
+      }
+      modal.querySelector("#close-modal").onclick = () => modal.remove();
+      modal.onclick = (e) => {
+        if (e.target === modal) modal.remove();
+      };
+      document.body.appendChild(modal);
+    } catch (e) {
+      toast(`Link suggestions failed: ${e.message}`);
     }
   }
   function markDirty() {

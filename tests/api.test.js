@@ -100,6 +100,18 @@ test('blogs list, draft CRUD, SEO analyze, image upload, publish + payload audit
   assert.ok(posts.items.find((p) => p.id === post.id));
 });
 
+test('templates, links suggest and keywords endpoints work in demo mode', async () => {
+  const tpl = await json(await call('GET', '/api/templates'));
+  assert.deepEqual(tpl.items, []);
+  assert.ok(tpl.installGuideUrl);
+
+  const links = await json(await call('POST', '/api/links/suggest', { body: { blogId: 'fake-blog-1', html: '<p>Welcome to my beginner blog journey</p>' } }));
+  assert.ok(links.suggestions.find((s) => s.title === 'Welcome to my blog'), 'matches fake provider post list');
+
+  const kw = await json(await call('GET', '/api/keywords/suggest?q='));
+  assert.deepEqual(kw.suggestions, []);
+});
+
 test('unauthenticated API calls are rejected', async () => {
   const res = await fetch(`${base}/api/posts`);
   assert.equal(res.status, 401);

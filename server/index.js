@@ -18,6 +18,7 @@ function createApp() {
   // Static: editor app (client/) and uploaded images (public/uploads).
   app.use(express.static(path.join(config.paths.root, 'client')));
   app.use('/uploads', express.static(config.paths.uploads, { maxAge: '30d', immutable: true }));
+  app.use('/templates', express.static(path.join(config.paths.root, 'templates')));
 
   app.get('/healthz', (req, res) => res.json({ ok: true, provider: config.effectiveProvider, publishMode: config.publishMode }));
 
