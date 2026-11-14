@@ -182,3 +182,22 @@ Two answer-engine optimization tools live alongside the GEO checklist:
   block** button previews the pairs and inserts them as visible content at the end of
   the post. No FAQ schema is emitted - Google retired FAQ rich results for most sites;
   clear visible Q&A is what AI engines quote.
+
+## Stock photos + writing lint
+
+- **Stock photo picker** (`server/images/stock.js`, `GET /api/stock/search`,
+  `POST /api/stock/insert`) - the editor toolbar's **Stock photo** button opens a
+  search modal (prefilled from the focus keyword), and the chosen photo is
+  downloaded and run through the same WebP compression pipeline as manual uploads,
+  with auto-written alt text (from the photo description/query, editable before
+  insert) and photographer credit preserved. Unsplash/Pexels need the user's own
+  free API key in `.env`; until then a deterministic demo provider generates
+  placeholders locally so the full flow works offline. Download URLs are
+  re-validated against the provider's CDN host on insert.
+- **Writing quality lint** (`server/seo/lint.js`, `POST /api/seo/lint`) - local,
+  no-external-API readability and grammar checks surfaced in the editor sidebar
+  under "Writing quality": long sentences, passive voice, wall-of-text paragraphs,
+  repeated words, double spaces, space-before-punctuation, common misspellings
+  (conservative list of words that are never correct English) and filler-word
+  overuse. Complements the checklist's single Flesch score with fixable,
+  issue-level detail.

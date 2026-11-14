@@ -280,6 +280,8 @@ async function openEditor(id) {
       <div class="seo-panel">
         <div class="seo-score" id="seo-score"></div>
         <div id="seo-checks"></div>
+        <div class="section-title" style="margin-top:1rem">Writing quality</div>
+        <div id="lint-list"></div>
         <div class="section-title" style="margin-top:1rem">Keyword ideas</div>
         <button class="btn-ghost" id="kw-ideas" style="width:100%">Get ideas for focus keyword</button>
         <button class="btn-ghost" id="kw-research" style="width:100%;margin-top:0.4rem">Deep research (scored, slower)</button>
@@ -337,6 +339,7 @@ async function openEditor(id) {
   document.getElementById('kw-research').onclick = keywordResearch;
 
   analyze();
+  lint();
 }
 
 function buildToolbar() {
@@ -351,6 +354,7 @@ function buildToolbar() {
     ['1. List', (e) => e.chain().focus().toggleOrderedList().run(), (e) => e.isActive('orderedList')],
     ['Link', setLink, (e) => e.isActive('link')],
     ['Image', pickImage, () => false],
+    ['Stock photo', stockPicker, () => false],
   ];
   bar.innerHTML = '';
   for (const [label, run, active] of items) {
@@ -399,6 +403,77 @@ async function uploadImage(file) {
   }
 }
 
+// ---------- stock photo picker ----------
+function stockPicker() {
+  const modal = el(`<div class="modal-backdrop"><div class="modal modal-wide">
+    <h3>Stock photos</h3>
+    <p class="hint" id="stock-provider-hint"></p>
+    <div class="row" style="margin-bottom:0.8rem">
+      <input id="stock-q" placeholder="Search photos, e.g. misty forest hike" style="flex:1" value="${esc(document.getElementById('f-keyword').value.trim() || document.getElementById('f-title').value.trim())}" />
+      <button class="btn-primary" id="stock-go">Search</button>
+      <button class="btn-ghost" id="close-modal">Close</button>
+    </div>
+    <div id="stock-grid"><div class="hint" style="padding:0.4rem 0">Search to see photos. Alt text is written automatically from the photo description and inserted with the image.</div></div>
+  </div></div>`);
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.querySelector('#close-modal').onclick = close;
+  modal.onclick = (e) => { if (e.target === modal) close(); };
+  const grid = modal.querySelector('#stock-grid');
+  const search = async () => {
+    const q = modal.querySelector('#stock-q').value.trim();
+    if (!q) return toast('Type what the photo should show');
+    grid.innerHTML = '<div class="hint" style="padding:0.4rem 0">Searching...</div>';
+    try {
+      const data = await api(`/stock/search?q=${encodeURIComponent(q)}`);
+      modal.querySelector('#stock-provider-hint').textContent = data.provider === 'demo'
+        ? 'Demo placeholders - add a free Unsplash or Pexels API key in .env to search real photos (see README). The picker, alt text and optimization work identically either way.'
+        : `Photos by ${data.provider === 'unsplash' ? 'Unsplash' : 'Pexels'} (your own free API key). Photographer credit is kept with the image.`;
+      grid.innerHTML = '';
+      if (!data.results.length) { grid.innerHTML = '<div class="empty">No photos found - try different words.</div>'; return; }
+      const tiles = el('<div class="stock-grid"></div>');
+      for (const photo of data.results) {
+        const tile = el(`<div class="stock-tile">
+          <img src="${esc(photo.previewUrl || '')}" alt="${esc(photo.altText)}" loading="lazy" />
+          <div class="stock-alt">${esc(photo.altText)}</div>
+        </div>`);
+        tile.onclick = () => pickStockPhoto(modal, photo);
+        tiles.appendChild(tile);
+      }
+      grid.appendChild(tiles);
+    } catch (e) { grid.innerHTML = `<div class="hint" style="padding:0.4rem 0">Stock search failed: ${esc(e.message)}</div>`; }
+  };
+  modal.querySelector('#stock-go').onclick = search;
+  modal.querySelector('#stock-q').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); search(); } };
+  if (modal.querySelector('#stock-q').value.trim()) search();
+}
+
+function pickStockPhoto(modal, photo) {
+  const grid = modal.querySelector('#stock-grid');
+  grid.innerHTML = `<div class="stock-picked">
+    <img src="${esc(photo.previewUrl || '')}" alt="${esc(photo.altText)}" />
+    <label>Alt text (auto-written - edit freely)</label>
+    <input id="stock-alt" value="${esc(photo.altText)}" />
+    ${photo.credit ? `<div class="hint">Photo: ${esc(photo.credit)}</div>` : ''}
+    <div class="row">
+      <button class="btn-primary" id="stock-insert">Optimize &amp; insert</button>
+      <button class="btn-ghost" id="stock-back">Back</button>
+    </div></div>`;
+  grid.querySelector('#stock-back').onclick = () => modal.querySelector('#stock-go').onclick();
+  grid.querySelector('#stock-insert').onclick = async () => {
+    const alt = grid.querySelector('#stock-alt').value.trim();
+    toast('Downloading and optimizing photo...');
+    try {
+      const img = await api('/stock/insert', { method: 'POST', body: { photo, alt } });
+      state.editor.chain().focus().insertContent(img.html + '<p></p>').run();
+      markDirty(); scheduleAnalyze();
+      const saved = Math.max(0, 100 - Math.round((img.variants.reduce((a, v) => a + v.bytes, 0) / Math.max(1, img.bytesIn)) * 100));
+      toast(`Photo optimized to WebP (${saved}% smaller) and inserted with alt text.`);
+      modal.remove();
+    } catch (e) { toast(`Insert failed: ${e.message}`); }
+  };
+}
+
 // ---------- SEO panel ----------
 function currentFields() {
   return {
@@ -412,7 +487,29 @@ function currentFields() {
 }
 function scheduleAnalyze() {
   clearTimeout(state.analyzeTimer);
-  state.analyzeTimer = setTimeout(analyze, 300);
+  state.analyzeTimer = setTimeout(() => { analyze(); lint(); }, 300);
+}
+async function lint() {
+  const f = currentFields();
+  const list = document.getElementById('lint-list');
+  if (!list) return;
+  if (!f.html || f.html.replace(/<[^>]+>/g, '').trim().split(/\s+/).filter(Boolean).length < 20) {
+    list.innerHTML = '<div class="hint" style="padding:0.2rem 0">Write a bit more body text - local readability and grammar checks appear here. No external API, everything runs on your own text.</div>';
+    return;
+  }
+  try {
+    const data = await api('/seo/lint', { method: 'POST', body: { title: f.title, html: f.html } });
+    list.innerHTML = '';
+    if (!data.issues.length) {
+      list.appendChild(el(`<div class="check"><span class="dot pass"></span>
+        <div><div class="label">Clean writing</div><div class="detail">No readability or grammar issues found in ${data.stats.sentences} sentences.</div></div></div>`));
+      return;
+    }
+    for (const issue of data.issues) {
+      list.appendChild(el(`<div class="check"><span class="dot ${issue.severity === 'fail' ? 'fail' : 'warn'}"></span>
+        <div><div class="label">${esc(issue.label)}</div><div class="detail">${esc(issue.detail)}</div></div></div>`));
+    }
+  } catch { list.innerHTML = '<div class="hint" style="padding:0.2rem 0">Writing lint unavailable.</div>'; }
 }
 async function analyze() {
   const f = currentFields();

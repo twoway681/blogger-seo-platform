@@ -2,23 +2,7 @@
 // Real-time on-page SEO checklist engine (pure functions, no I/O).
 // Drives the live sidebar in the editor. Each check returns pass | warn | fail.
 
-function stripHtml(html) {
-  return String(html || '')
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function words(text) {
-  const m = String(text || '').toLowerCase().match(/[a-z0-9']+/g);
-  return m || [];
-}
+const { stripHtml, words } = require('./analyzer-helpers');
 
 function escapeRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
