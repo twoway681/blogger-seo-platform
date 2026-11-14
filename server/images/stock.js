@@ -117,6 +117,7 @@ const unsplash = {
   async fetch(result, { fetchImpl = fetch } = {}) {
     const res = await fetchImpl(assertProviderUrl(result._url, 'images.unsplash.com'));
     if (!res.ok) throw new Error(`unsplash download failed: HTTP ${res.status}`);
+    assertProviderUrl(res.url || result._url, 'images.unsplash.com'); // re-validate after redirects
     const buffer = await boundedBuffer(res);
     return { buffer, originalName: `${result.id}.jpg`, alt: result.altText, credit: result.credit };
   },
@@ -163,6 +164,7 @@ const pexels = {
   async fetch(result, { fetchImpl = fetch } = {}) {
     const res = await fetchImpl(assertProviderUrl(result._url, 'images.pexels.com'));
     if (!res.ok) throw new Error(`pexels download failed: HTTP ${res.status}`);
+    assertProviderUrl(res.url || result._url, 'images.pexels.com'); // re-validate after redirects
     const buffer = await boundedBuffer(res);
     return { buffer, originalName: `${result.id}.jpg`, alt: result.altText, credit: result.credit };
   },
