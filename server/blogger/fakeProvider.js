@@ -47,8 +47,14 @@ function listPosts(blogId) {
   return {
     kind: 'blogger#postList',
     items: [
-      { id: 'fake-post-901', blog: { id: blog.id }, title: 'Welcome to my blog', url: `${blog.url}/2026/10/welcome-to-my-blog.html`, published: '2026-10-02T09:00:00.000Z' },
-      { id: 'fake-post-902', blog: { id: blog.id }, title: 'Beginner mistakes I made', url: `${blog.url}/2026/10/beginner-mistakes.html`, published: '2026-10-20T15:30:00.000Z' },
+      { id: 'fake-post-901', blog: { id: blog.id }, title: 'Welcome to my blog', url: `${blog.url}/2026/10/welcome-to-my-blog.html`, published: '2026-10-02T09:00:00.000Z',
+        content: '<p>Welcome! This blog is where I share everything I learn. Start with my story.</p>' },
+      { id: 'fake-post-902', blog: { id: blog.id }, title: 'Beginner mistakes I made', url: `${blog.url}/2026/10/beginner-mistakes.html`, published: '2026-10-20T15:30:00.000Z',
+        content: `<p>When I started, I got almost everything wrong. Read <a href="${blog.url}/2026/10/welcome-to-my-blog.html">my welcome post</a> for context, and this <a href="https://example.com/guide">external guide</a>.</p>` },
+      // Deliberately orphaned in the demo set: nothing links to it, so the
+      // orphan detector has something real to show in demo mode.
+      { id: 'fake-post-903', blog: { id: blog.id }, title: 'Hidden gems no one links to', url: `${blog.url}/2026/11/hidden-gems.html`, published: '2026-11-05T11:00:00.000Z',
+        content: '<p>A quiet list of overlooked favorites. This post never got linked from anywhere else.</p>' },
     ],
   };
 }
@@ -70,4 +76,28 @@ function publishPost(blogId, postId, publishDate) {
   };
 }
 
-module.exports = { demoBlogs, fakeAuthUrl, fakeExchangeCode, fakeUserinfo, insertPost, publishPost, listPosts };
+
+// Static pages (About / Privacy / Disclosure). Demo blogs start with none -
+// that is the realistic state the monetization kit fixes.
+const fakePages = [];
+function listPages() {
+  return { kind: 'blogger#pageList', items: fakePages.slice() };
+}
+function insertPage(blogId, payload) {
+  seq += 1;
+  const blog = demoBlogs().find((b) => b.id === blogId) || demoBlogs()[0];
+  const slug = (payload.title || 'page').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'page';
+  const page = {
+    kind: 'blogger#page',
+    id: `fake-page-${seq}`,
+    blog: { id: blogId },
+    title: payload.title,
+    content: payload.content,
+    status: 'LIVE',
+    url: `${blog.url.replace(/\/$/, '')}/p/${slug}.html`,
+  };
+  fakePages.push(page);
+  return page;
+}
+
+module.exports = { demoBlogs, fakeAuthUrl, fakeExchangeCode, fakeUserinfo, insertPost, publishPost, listPosts, listPages, insertPage };

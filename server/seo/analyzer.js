@@ -192,6 +192,22 @@ function analyzePost({ title = '', html = '', metaDescription = '', focusKeyword
       : hasFreshness ? 'Freshness signal present (year or "updated") - AI engines and readers both favor current content.'
       : `Mention the current year (${year}) or an "updated" note - undated content loses AI citations and clicks.`);
 
+  // --- Monetization checks: FTC disclosure + rel="sponsored" on money links -----
+  // (Inline require avoids a cycle: monetize/kit uses stripHtml from this module.)
+  const { findAffiliateLinks, hasDisclosure } = require('../monetize/kit');
+  const affiliate = findAffiliateLinks(html);
+  if (affiliate.length) {
+    const untagged = affiliate.filter((a) => !a.sponsored);
+    add('money-sponsored', 'Money links tagged rel="sponsored"', untagged.length === 0 ? 'pass' : 'fail',
+      untagged.length === 0
+        ? `All ${affiliate.length} affiliate link(s) carry rel="sponsored" - Google requires paid links tagged.`
+        : `${untagged.length}/${affiliate.length} affiliate link(s) lack rel="sponsored". Untagged paid links risk a Google manual action. Select each link and use the Sponsored button.`);
+    add('money-disclosure', 'FTC disclosure visible', hasDisclosure(html) ? 'pass' : 'fail',
+      hasDisclosure(html)
+        ? 'A disclosure appears near the top of the post.'
+        : 'Affiliate links need a clear disclosure near the top of the post (FTC). Use "Insert disclosure" in the publish bar.');
+  }
+
   // 8. Readability
   const fr = flesch(text);
   add('readability', 'Readability', !wordCount ? 'fail' : fr >= 60 ? 'pass' : fr >= 40 ? 'warn' : 'fail',

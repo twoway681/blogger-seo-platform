@@ -42,4 +42,15 @@ async function publishPost(user, blogId, postId, publishDate, saveTokens) {
   return google.withFreshToken(user, saveTokens, (t) => google.publishPost(t, blogId, postId, publishDate));
 }
 
-module.exports = { isGoogle, authUrl, exchangeCode, userinfo, listBlogs, listPosts, insertPost, publishPost };
+
+async function listPages(user, blogId, saveTokens) {
+  if (!isGoogle()) return fake.listPages(blogId);
+  return google.withFreshToken(user, saveTokens, (t) => google.listPages(t, blogId));
+}
+
+async function insertPage(user, blogId, payload, saveTokens) {
+  if (!isGoogle()) return fake.insertPage(blogId, payload);
+  return google.withFreshToken(user, saveTokens, (t) => google.insertPage(t, blogId, payload));
+}
+
+module.exports = { isGoogle, authUrl, exchangeCode, userinfo, listBlogs, listPosts, insertPost, publishPost, listPages, insertPage };

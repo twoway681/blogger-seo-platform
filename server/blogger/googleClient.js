@@ -109,6 +109,10 @@ const api = {
   updatePost: (token, blogId, postId, payload) => blogger(token, 'PATCH', `/blogs/${blogId}/posts/${postId}`, payload),
   deletePost: (token, blogId, postId) => blogger(token, 'DELETE', `/blogs/${blogId}/posts/${postId}`),
   listPosts: (token, blogId) => blogger(token, 'GET', `/blogs/${blogId}/posts?maxResults=50`),
+  // Blogger pages API: static pages (About, Privacy, Disclosure). pages.list
+  // returns full resources including content; pages.insert publishes a page.
+  listPages: (token, blogId) => blogger(token, 'GET', `/blogs/${blogId}/pages`),
+  insertPage: (token, blogId, payload) => blogger(token, 'POST', `/blogs/${blogId}/pages/`, payload),
 };
 
 module.exports = api;
