@@ -172,7 +172,9 @@ Two answer-engine optimization tools live alongside the GEO checklist:
 
 - **llms.txt generator** (`server/aeo/llmstxt.js`, `GET /api/blogs/:blogId/llms.txt`) -
   builds an [llms.txt](https://llmstxt.org) file from the blog's live posts (title, link,
-  one-line summary) so AI crawlers and assistants can understand and cite the blog.
+  one-line summary) describing the blog for AI crawlers. Honest expectation: 2026
+  analyses found most llms.txt files receive few or no crawler requests - it is free
+  and harmless, not a proven traffic driver.
   Dashboard blog cards have an **llms.txt** button to preview, copy or download it.
   Blogger cannot host root files, so serve it from wherever Blogsmith is deployed
   (or any static host); drafts are never included.
@@ -180,5 +182,27 @@ Two answer-engine optimization tools live alongside the GEO checklist:
   question-and-answer pairs from the post's own sections, phrased the way people ask
   AI engines ("What to pack" -> "What should I pack?"). The editor's **Suggest Q&A
   block** button previews the pairs and inserts them as visible content at the end of
-  the post. No FAQ schema is emitted - Google retired FAQ rich results for most sites;
-  clear visible Q&A is what AI engines quote.
+  the post. No FAQ schema is emitted - Google retired FAQ rich results for most sites.
+  Q&A blocks help readers and featured snippets directly; 2026 studies are mixed on
+  whether they earn AI citations, so write them for readers first.
+
+## Growth features (second wave)
+
+- **Content refresh queue** (`GET /api/refresh-queue`) - live posts older than 28 days
+  without an update are flagged on the dashboard (2026 studies put AI-citation
+  half-life around a month); **Refresh now** re-publishes in one click, which sends a
+  fresh sitemap hint and updates the post date.
+- **Question mining** (`GET /api/keywords/questions`) - fans the seed out through
+  question prefixes ("how to", "what is", "is", ...) on Google Autocomplete and keeps
+  only genuine question phrasing - the one AEO tactic the 2026 studies consistently
+  support. The editor sidebar's **Find questions people ask** button lists them with a
+  coverage badge: green when an existing post already answers it, amber when it's a gap.
+- **Search traffic dashboard** (`GET /api/searchconsole/:blogId/performance`) - pulls
+  observed clicks/impressions/CTR/average position per post from the Search Analytics
+  API (fully supported, read-only) and matches rows to posts by URL. The fake provider
+  returns stable simulated numbers in demo mode.
+- **Native scheduling + batch publish** - scheduling uses Blogger's documented path
+  (insert draft, then `posts.publish?publishDate=...`; verified against Google's API
+  reference), not a local cron. The dashboard posts table has checkboxes and a
+  **Publish selected** button that runs the same audited publish flow per post
+  (`POST /api/posts/batch/publish`), reporting per-post results.

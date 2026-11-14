@@ -33,4 +33,10 @@ module.exports = {
   // anywhere in this client: the Indexing API is JobPosting/BroadcastEvent-only.
   inspectUrl: (token, siteUrl, url) =>
     sc(token, 'POST', INSPECTION, { inspectionUrl: url, siteUrl }),
+  // Search Analytics API: observed clicks/impressions per page. Fully supported,
+  // read-only reporting data (no action claims).
+  queryPerformance: (token, siteUrl, { startDate, endDate } = {}) =>
+    sc(token, 'POST', `${SITES}/${encodeURIComponent(siteUrl)}/searchAnalytics/query`, {
+      startDate, endDate, dimensions: ['page'], rowLimit: 100,
+    }),
 };

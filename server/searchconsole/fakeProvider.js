@@ -54,4 +54,18 @@ function inspectUrl(siteUrl, url) {
   return { inspectionResult: { indexStatusResult: state } };
 }
 
-module.exports = { addSite, getSite, submitSitemap, listSitemaps, inspectUrl };
+// Deterministic per-URL performance rows so the dashboard demo is stable across
+// reloads. Metrics are derived from a hash of the URL - same URL, same numbers.
+function queryPerformance(siteUrl, { urls = [] } = {}) {
+  const rows = urls.map((url) => {
+    let h = 0;
+    for (const ch of String(url)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    const impressions = 40 + (h % 900);
+    const clicks = impressions === 0 ? 0 : (h % 997) % Math.max(2, Math.floor(impressions / 4));
+    const position = 3 + (((h >>> 8) % 240) / 10);
+    return { keys: [url], clicks, impressions, ctr: impressions ? clicks / impressions : 0, position };
+  });
+  return { rows };
+}
+
+module.exports = { addSite, getSite, submitSitemap, listSitemaps, inspectUrl, queryPerformance };

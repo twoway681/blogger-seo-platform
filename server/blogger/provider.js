@@ -37,4 +37,9 @@ async function insertPost(user, blogId, payload, saveTokens) {
   return google.withFreshToken(user, saveTokens, (t) => google.insertPost(t, blogId, payload, { isDraft: payload.isDraft }));
 }
 
-module.exports = { isGoogle, authUrl, exchangeCode, userinfo, listBlogs, listPosts, insertPost };
+async function publishPost(user, blogId, postId, publishDate, saveTokens) {
+  if (!isGoogle()) return fake.publishPost(blogId, postId, publishDate);
+  return google.withFreshToken(user, saveTokens, (t) => google.publishPost(t, blogId, postId, publishDate));
+}
+
+module.exports = { isGoogle, authUrl, exchangeCode, userinfo, listBlogs, listPosts, insertPost, publishPost };

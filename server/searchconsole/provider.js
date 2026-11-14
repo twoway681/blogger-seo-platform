@@ -45,4 +45,9 @@ async function inspectUrl(user, siteUrl, url, saveTokens) {
   return withToken(user, saveTokens, (t) => googleSc.inspectUrl(t, siteUrl, url));
 }
 
-module.exports = { isGoogle, addSite, getSite, submitSitemap, listSitemaps, inspectUrl };
+async function queryPerformance(user, siteUrl, saveTokens, opts = {}) {
+  if (!isGoogle()) return fake.queryPerformance(siteUrl, opts);
+  return withToken(user, saveTokens, (t) => googleSc.queryPerformance(t, siteUrl, opts));
+}
+
+module.exports = { isGoogle, addSite, getSite, submitSitemap, listSitemaps, inspectUrl, queryPerformance };

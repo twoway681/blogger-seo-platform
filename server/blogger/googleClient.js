@@ -102,6 +102,10 @@ const api = {
   getBlog: (token, blogId) => blogger(token, 'GET', `/blogs/${blogId}`),
   insertPost: (token, blogId, payload, { isDraft } = {}) =>
     blogger(token, 'POST', `/blogs/${blogId}/posts/${isDraft ? '?isDraft=true' : ''}`, payload),
+  // Scheduling is native to Blogger: publish a DRAFT with publishDate in the future
+  // (https://developers.google.com/blogger/docs/3.0/reference/posts/publish).
+  publishPost: (token, blogId, postId, publishDate) =>
+    blogger(token, 'POST', `/blogs/${blogId}/posts/${postId}/publish${publishDate ? `?publishDate=${encodeURIComponent(publishDate)}` : ''}`),
   updatePost: (token, blogId, postId, payload) => blogger(token, 'PATCH', `/blogs/${blogId}/posts/${postId}`, payload),
   deletePost: (token, blogId, postId) => blogger(token, 'DELETE', `/blogs/${blogId}/posts/${postId}`),
   listPosts: (token, blogId) => blogger(token, 'GET', `/blogs/${blogId}/posts?maxResults=50`),

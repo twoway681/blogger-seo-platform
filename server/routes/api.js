@@ -10,7 +10,7 @@ const { generateLlmsTxt } = require('../aeo/llmstxt');
 const { suggestQa } = require('../aeo/qa');
 const { composePostPayload } = require('../seo/compose');
 const { processImage } = require('../images/pipeline');
-const { suggestKeywords, researchKeywords } = require('../keywords/provider');
+const { suggestKeywords, suggestQuestions, researchKeywords } = require('../keywords/provider');
 const sc = require('../searchconsole/provider');
 const { suggestInternalLinks } = require('../links/suggest');
 const fs = require('fs');
@@ -151,84 +151,127 @@ router.post('/images', requireAuth, upload.single('image'), async (req, res) => 
 
 // --- Publish / draft / schedule ---------------------------------------
 // mode: 'publish' (now) | 'draft' (Blogger draft) | 'schedule' (future timestamp)
-router.post('/posts/:id/publish', requireAuth, async (req, res) => {
-  const post = getPost(req, res);
-  if (!post) return;
-  const { mode = 'publish', scheduledAt } = req.body || {};
-  if (mode === 'schedule' && !scheduledAt) return res.status(400).json({ error: 'scheduledAt required for schedule mode' });
-  if (mode === 'schedule' && !(new Date(scheduledAt) > new Date())) return res.status(400).json({ error: 'scheduledAt must be in the future' });
-
+// Core publish flow, shared by the single-post route and batch publish.
+// Throws on failure; the caller maps errors to HTTP.
+async function performPublish(user, post, mode, scheduledAt) {
   const analysis = analyzePost({
     title: post.title, html: post.html, metaDescription: post.metaDescription,
-    focusKeyword: post.focusKeyword, siteUrl: blogUrlFor(req.user.id, post.blogId),
+    focusKeyword: post.focusKeyword, siteUrl: blogUrlFor(user.id, post.blogId),
   });
 
-  const { payload, finalHtml, canonicalUrl } = composePostPayload({
+  const { payload, canonicalUrl } = composePostPayload({
     blogId: post.blogId,
-    blogUrl: blogUrlFor(req.user.id, post.blogId),
+    blogUrl: blogUrlFor(user.id, post.blogId),
     title: post.title,
     html: post.html,
     metaDescription: post.metaDescription,
     labels: JSON.parse(post.labels || '[]'),
-    authorName: req.user.name,
-    blogName: (db.prepare('SELECT name FROM blogs WHERE id = ? AND user_id = ?').get(post.blogId, req.user.id) || {}).name,
+    authorName: user.name,
+    blogName: (db.prepare('SELECT name FROM blogs WHERE id = ? AND user_id = ?').get(post.blogId, user.id) || {}).name,
     canonicalUrl: post.publishedUrl,
     isDraft: mode === 'draft',
     scheduledAtIso: mode === 'schedule' ? new Date(scheduledAt).toISOString() : undefined,
   });
 
   // Safety gate: with the real provider, only actually call Blogger when PUBLISH_MODE=live.
-  const willCallLive = provider.isGoogle() && config.livePublishingEnabled;
   const dryRun = provider.isGoogle() && !config.livePublishingEnabled;
 
+  let result;
+  if (dryRun) {
+    result = { dryRun: true, reason: 'PUBLISH_MODE is not "live" - payload built and validated, nothing sent to Blogger.', payload };
+  } else if (mode === 'schedule') {
+    // Blogger's documented scheduling path: insert as draft, then publish that
+    // draft with publishDate in the future (posts.publish?publishDate=...).
+    const scheduledIso = new Date(scheduledAt).toISOString();
+    const draft = await provider.insertPost(user, post.blogId, { ...payload, isDraft: true }, saveTokens(user.id));
+    result = await provider.publishPost(user, post.blogId, draft.id, scheduledIso, saveTokens(user.id));
+  } else {
+    result = await provider.insertPost(user, post.blogId, payload, saveTokens(user.id));
+  }
+
+  const newStatus = dryRun ? 'live_dry_run' : mode === 'draft' ? 'draft' : mode === 'schedule' ? 'scheduled' : 'published';
+  db.prepare(`UPDATE posts SET status = ?, blogger_post_id = COALESCE(?, blogger_post_id),
+    published_url = COALESCE(?, published_url), scheduled_at = ?, seo_json = ?, last_payload_json = ?, updated_at = datetime('now')
+    WHERE id = ?`)
+    .run(newStatus, result.id || null, result.url || null,
+      mode === 'schedule' ? new Date(scheduledAt).toISOString() : null,
+      JSON.stringify(analysis), JSON.stringify({ payload, canonicalUrl, result }), post.id);
+
+  // On publish, do the two things Google actually supports for blog posts:
+  // resubmit the sitemap (a discovery hint only - sitemaps never guarantee
+  // crawling or indexing) and inspect the live URL to record Google's OBSERVED
+  // index status. No indexing request is made: the Indexing API is restricted
+  // to JobPosting and livestream BroadcastEvent pages. Tolerant: never fails
+  // the publish itself.
+  let indexing = null;
+  const postUrl = result && result.url;
+  if (postUrl && mode === 'publish') {
+    try {
+      const blog = db.prepare('SELECT url FROM blogs WHERE id = ? AND user_id = ?').get(post.blogId, user.id);
+      const scRow = db.prepare('SELECT site_url FROM search_console WHERE blog_id = ? AND user_id = ?').get(post.blogId, user.id);
+      const siteUrl = scRow ? scRow.site_url : blog.url.replace(/\/$/, '') + '/';
+      const sitemap = await sc.submitSitemap(user, siteUrl, `${siteUrl}sitemap.xml`, saveTokens(user.id));
+      const sitemapHintAt = (sitemap && sitemap.lastSubmitted) || new Date().toISOString();
+      const insp = await sc.inspectUrl(user, siteUrl, postUrl, saveTokens(user.id));
+      const st = ((insp.inspectionResult || {}).indexStatusResult || {});
+      db.prepare(`INSERT INTO indexing (url, blog_id, user_id, coverage_state, last_crawl_time, sitemap_hint_at, result_json, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        ON CONFLICT(url) DO UPDATE SET coverage_state=excluded.coverage_state, last_crawl_time=excluded.last_crawl_time,
+          sitemap_hint_at=excluded.sitemap_hint_at, result_json=excluded.result_json, updated_at=excluded.updated_at`)
+        .run(postUrl, post.blogId, user.id, st.coverageState || null, st.lastCrawlTime || null, sitemapHintAt, JSON.stringify(insp));
+      indexing = { url: postUrl, sitemapHintAt, coverageState: st.coverageState || 'unknown' };
+    } catch (err) {
+      indexing = { url: postUrl, error: err.message };
+    }
+  }
+
+  return { ok: true, mode, dryRun, status: newStatus, result, canonicalUrl, seo: analysis, indexing };
+}
+
+// Batch publish: several drafts through the same audited flow, one by one.
+router.post('/posts/batch/publish', requireAuth, async (req, res) => {
+  const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids.slice(0, 20) : [];
+  if (!ids.length) return res.status(400).json({ error: 'ids required' });
+  const results = [];
+  for (const id of ids) {
+    const post = db.prepare(`SELECT ${postCols} FROM posts WHERE id = ? AND user_id = ?`).get(String(id), req.user.id);
+    if (!post) { results.push({ id, ok: false, error: 'not_found' }); continue; }
+    try {
+      const r = await performPublish(req.user, post, 'publish');
+      results.push({ id, ok: true, status: r.status, url: r.result && r.result.url });
+    } catch (err) {
+      results.push({ id, ok: false, error: err.message });
+    }
+  }
+  res.json({ ok: results.every((r) => r.ok), results });
+});
+
+
+router.post('/posts/:id/publish', requireAuth, async (req, res) => {
+  const post = getPost(req, res);
+  if (!post) return;
+  const { mode = 'publish', scheduledAt } = req.body || {};
+  if (mode === 'schedule' && !scheduledAt) return res.status(400).json({ error: 'scheduledAt required for schedule mode' });
+  if (mode === 'schedule' && !(new Date(scheduledAt) > new Date())) return res.status(400).json({ error: 'scheduledAt must be in the future' });
   try {
-    let result;
-    if (dryRun) {
-      result = { dryRun: true, reason: 'PUBLISH_MODE is not "live" - payload built and validated, nothing sent to Blogger.', payload };
-    } else {
-      result = await provider.insertPost(req.user, post.blogId, payload, saveTokens(req.user.id));
-    }
-
-    const newStatus = dryRun ? 'live_dry_run' : mode === 'draft' ? 'draft' : mode === 'schedule' ? 'scheduled' : 'published';
-    db.prepare(`UPDATE posts SET status = ?, blogger_post_id = COALESCE(?, blogger_post_id),
-      published_url = COALESCE(?, published_url), scheduled_at = ?, seo_json = ?, last_payload_json = ?, updated_at = datetime('now')
-      WHERE id = ?`)
-      .run(newStatus, result.id || null, result.url || null,
-        mode === 'schedule' ? new Date(scheduledAt).toISOString() : null,
-        JSON.stringify(analysis), JSON.stringify({ payload, canonicalUrl, result }), post.id);
-
-    // On publish, do the two things Google actually supports for blog posts:
-    // resubmit the sitemap (a discovery hint only - sitemaps never guarantee
-    // crawling or indexing) and inspect the live URL to record Google's OBSERVED
-    // index status. No indexing request is made: the Indexing API is restricted
-    // to JobPosting and livestream BroadcastEvent pages. Tolerant: never fails
-    // the publish itself.
-    let indexing = null;
-    const postUrl = result && result.url;
-    if (postUrl && mode === 'publish') {
-      try {
-        const blog = db.prepare('SELECT url FROM blogs WHERE id = ? AND user_id = ?').get(post.blogId, req.user.id);
-        const scRow = db.prepare('SELECT site_url FROM search_console WHERE blog_id = ? AND user_id = ?').get(post.blogId, req.user.id);
-        const siteUrl = scRow ? scRow.site_url : blog.url.replace(/\/$/, '') + '/';
-        const sitemap = await sc.submitSitemap(req.user, siteUrl, `${siteUrl}sitemap.xml`, saveTokens(req.user.id));
-        const sitemapHintAt = (sitemap && sitemap.lastSubmitted) || new Date().toISOString();
-        const insp = await sc.inspectUrl(req.user, siteUrl, postUrl, saveTokens(req.user.id));
-        const st = ((insp.inspectionResult || {}).indexStatusResult || {});
-        db.prepare(`INSERT INTO indexing (url, blog_id, user_id, coverage_state, last_crawl_time, sitemap_hint_at, result_json, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-          ON CONFLICT(url) DO UPDATE SET coverage_state=excluded.coverage_state, last_crawl_time=excluded.last_crawl_time,
-            sitemap_hint_at=excluded.sitemap_hint_at, result_json=excluded.result_json, updated_at=excluded.updated_at`)
-          .run(postUrl, post.blogId, req.user.id, st.coverageState || null, st.lastCrawlTime || null, sitemapHintAt, JSON.stringify(insp));
-        indexing = { url: postUrl, sitemapHintAt, coverageState: st.coverageState || 'unknown' };
-      } catch (err) {
-        indexing = { url: postUrl, error: err.message };
-      }
-    }
-
-    res.json({ ok: true, mode, dryRun, status: newStatus, result, canonicalUrl, seo: analysis, indexing });
+    res.json(await performPublish(req.user, post, mode, scheduledAt));
   } catch (err) {
     res.status(502).json({ error: 'publish_failed', message: err.message });
   }
+});
+
+// Content refresh queue: live posts whose freshness window has decayed.
+// (2026 studies put AI-citation half-life at roughly a month; 28 days is the flag.)
+const REFRESH_AFTER_DAYS = 28;
+router.get('/refresh-queue', requireAuth, (req, res) => {
+  const cutoff = new Date(Date.now() - REFRESH_AFTER_DAYS * 86400_000).toISOString();
+  const stale = db.prepare(`SELECT id, blog_id AS blogId, title, published_url AS publishedUrl, updated_at AS updatedAt
+    FROM posts WHERE user_id = ? AND status IN ('published','live_dry_run') AND updated_at < ?
+    ORDER BY updated_at ASC`).all(req.user.id, cutoff);
+  res.json({
+    refreshAfterDays: REFRESH_AFTER_DAYS,
+    items: stale.map((p) => ({ ...p, daysSinceUpdate: Math.floor((Date.now() - new Date(p.updatedAt.replace(' ', 'T') + 'Z')) / 86400_000) })),
+  });
 });
 
 // --- Template library (Phase 2 drop-in: XML files + manifest.json) ----------
@@ -251,6 +294,30 @@ router.get('/keywords/suggest', requireAuth, async (req, res) => {
     if (!seed) return res.json({ seed, suggestions: [] });
     const suggestions = await suggestKeywords(seed);
     res.json({ seed, suggestions: suggestions.slice(0, 30) });
+  } catch (err) {
+    res.status(502).json({ error: 'keyword_provider_error', message: err.message });
+  }
+});
+
+// Question mining: the exact questions people type into Google (and ask AI
+// engines) around a seed - the one AEO tactic the 2026 studies consistently
+// support. Each question is matched against the user's posts so gaps are visible.
+router.get('/keywords/questions', requireAuth, async (req, res) => {
+  try {
+    const seed = String(req.query.q || '').trim();
+    if (!seed) return res.json({ seed, questions: [] });
+    const questions = await suggestQuestions(seed);
+    const posts = db.prepare("SELECT title, focus_keyword AS focusKeyword FROM posts WHERE user_id = ? AND title != ''").all(req.user.id);
+    const covered = (q) => {
+      for (const p of posts) {
+        const kw = (p.focusKeyword || '').trim().toLowerCase();
+        if (kw && kw.length >= 4 && q.includes(kw)) return p.title;
+        const t = (p.title || '').toLowerCase();
+        if (t && t.length >= 8 && q.includes(t)) return p.title;
+      }
+      return null;
+    };
+    res.json({ seed, questions: questions.slice(0, 25).map((x) => ({ ...x, coveredBy: covered(x.question) })) });
   } catch (err) {
     res.status(502).json({ error: 'keyword_provider_error', message: err.message });
   }
@@ -341,6 +408,42 @@ router.post('/searchconsole/:blogId/inspect', requireAuth, async (req, res) => {
     res.json({ url, coverageState: status.coverageState || 'unknown', result });
   } catch (err) {
     res.status(502).json({ error: 'inspection_failed', message: err.message });
+  }
+});
+
+// Search Analytics: observed clicks/impressions per page over the last 28 days,
+// matched back to local posts by published URL. Read-only reporting; in demo
+// mode the fake provider returns stable simulated numbers.
+router.get('/searchconsole/:blogId/performance', requireAuth, async (req, res) => {
+  const scRow = db.prepare('SELECT site_url FROM search_console WHERE blog_id = ? AND user_id = ?').get(req.params.blogId, req.user.id);
+  const blog = db.prepare('SELECT url FROM blogs WHERE id = ? AND user_id = ?').get(req.params.blogId, req.user.id);
+  const siteUrl = scRow ? scRow.site_url : blog ? blog.url.replace(/\/$/, '') + '/' : null;
+  if (!siteUrl) return res.status(404).json({ error: 'blog_not_found' });
+  const posts = db.prepare(`SELECT id, title, published_url AS publishedUrl FROM posts
+    WHERE blog_id = ? AND user_id = ? AND published_url IS NOT NULL AND status IN ('published','live_dry_run')`).all(req.params.blogId, req.user.id);
+  try {
+    const end = new Date(); const start = new Date(Date.now() - 28 * 86400_000);
+    const iso = (d) => d.toISOString().slice(0, 10);
+    const data = await sc.queryPerformance(req.user, siteUrl, saveTokens(req.user.id), {
+      startDate: iso(start), endDate: iso(end), urls: posts.map((p) => p.publishedUrl),
+    });
+    const byUrl = new Map();
+    for (const row of data.rows || []) {
+      const url = (row.keys || [])[0];
+      if (url) byUrl.set(url, row);
+    }
+    const items = posts.map((p) => {
+      const r = byUrl.get(p.publishedUrl) || { clicks: 0, impressions: 0, ctr: 0, position: null };
+      return {
+        postId: p.id, title: p.title || 'Untitled', url: p.publishedUrl,
+        clicks: r.clicks, impressions: r.impressions,
+        ctr: Math.round((r.ctr || 0) * 1000) / 10,
+        position: r.position == null ? null : Math.round(r.position * 10) / 10,
+      };
+    }).sort((a, b) => b.clicks - a.clicks);
+    res.json({ blogId: req.params.blogId, rangeDays: 28, items });
+  } catch (err) {
+    res.status(502).json({ error: 'performance_failed', message: err.message });
   }
 });
 

@@ -23,6 +23,40 @@ async function autocompleteSuggestions(query, fetchImpl = fetch) {
 
 const EXPANSIONS = ['', ' for beginners', ' tips', ' ideas', ' a', ' b', ' c', ' how to', ' best', ' free'];
 
+// Question mining: the exact phrasing people type (and ask AI engines). Question
+// prefixes around the seed, filtered to genuine question-shaped suggestions.
+const QUESTION_TEMPLATES = [
+  (q) => `how to ${q}`, (q) => `what is ${q}`, (q) => `what are ${q}`,
+  (q) => `which ${q}`, (q) => `why ${q}`, (q) => `when ${q}`,
+  (q) => `where ${q}`, (q) => `can ${q}`, (q) => `is ${q}`, (q) => `${q} questions`,
+];
+const QUESTION_WORDS = ['how', 'what', 'why', 'when', 'where', 'which', 'who', 'can', 'is', 'are', 'does', 'should'];
+
+async function suggestQuestions(seed, { fetchImpl = fetch, templates = QUESTION_TEMPLATES } = {}) {
+  const clean = String(seed || '').trim().toLowerCase();
+  if (!clean) return [];
+  const key = `qq:${clean}`;
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.value;
+
+  const seen = new Set();
+  const out = [];
+  for (const t of templates) {
+    try {
+      const suggestions = await autocompleteSuggestions(t(clean), fetchImpl);
+      for (const s of suggestions) {
+        const q = String(s).toLowerCase().trim();
+        if (!q || seen.has(q)) continue;
+        if (!QUESTION_WORDS.includes(q.split(/\s+/)[0]) && !q.includes('?')) continue;
+        seen.add(q);
+        out.push({ question: q, source: 'google-autocomplete' });
+      }
+    } catch { /* partial results are still useful */ }
+  }
+  cache.set(key, { at: Date.now(), value: out });
+  return out;
+}
+
 async function suggestKeywords(seed, { fetchImpl = fetch, expansions = EXPANSIONS } = {}) {
   const clean = String(seed || '').trim().toLowerCase();
   if (!clean) return [];
@@ -67,4 +101,4 @@ async function researchKeywords(seed, opts = {}) {
   return results.map((r) => ({ keyword: r.keyword, source: 'keyword-finder', score: r.score, reasons: r.reasons }));
 }
 
-module.exports = { suggestKeywords, researchKeywords };
+module.exports = { suggestKeywords, suggestQuestions, researchKeywords };

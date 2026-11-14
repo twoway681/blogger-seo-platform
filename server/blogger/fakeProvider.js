@@ -53,4 +53,21 @@ function listPosts(blogId) {
   };
 }
 
-module.exports = { demoBlogs, fakeAuthUrl, fakeExchangeCode, fakeUserinfo, insertPost, listPosts };
+// Mirror of the real two-step scheduling flow: a future publishDate yields a
+// SCHEDULED post; no date (or a past one) publishes immediately.
+const lastInserted = () => ({ id: `fake-post-${seq}` });
+function publishPost(blogId, postId, publishDate) {
+  const blog = demoBlogs().find((b) => b.id === blogId) || demoBlogs()[0];
+  const scheduled = publishDate && new Date(publishDate) > new Date();
+  const when = publishDate || new Date().toISOString();
+  return {
+    kind: 'blogger#post',
+    id: postId || lastInserted().id,
+    blog: { id: blogId },
+    status: scheduled ? 'SCHEDULED' : 'LIVE',
+    published: when,
+    url: `${blog.url.replace(/\/$/, '')}/2026/11/post-${String(postId || seq).replace(/[^a-z0-9]+/gi, '-')}.html`,
+  };
+}
+
+module.exports = { demoBlogs, fakeAuthUrl, fakeExchangeCode, fakeUserinfo, insertPost, publishPost, listPosts };

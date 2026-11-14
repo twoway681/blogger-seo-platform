@@ -108,8 +108,12 @@ function renderDashboard() {
       </div></div>` : ''}
     <div class="section-title">Connected blogs</div>
     <div class="blog-grid" id="blogs"></div>
-    <div class="section-title">Your drafts & posts</div>
+    <div class="section-title">Your drafts & posts <button class="btn-ghost" id="batch-publish" style="float:right;display:none">Publish selected</button></div>
     <div id="posts"></div>
+    <div class="section-title">Content refresh queue</div>
+    <div id="refresh"></div>
+    <div class="section-title">Search traffic (last 28 days)</div>
+    <div id="traffic"></div>
     <div class="section-title">SEO-clean Blogger templates</div>
     <div id="templates"></div>`;
   const blogWrap = v.querySelector('#blogs');
@@ -149,12 +153,13 @@ function renderDashboard() {
   const postWrap = v.querySelector('#posts');
   if (!state.posts.length) { postWrap.innerHTML = '<div class="empty">No drafts yet - pick a blog above and start writing.</div>'; return; }
   const table = el(`<table class="post-table"><thead><tr>
-    <th>Title</th><th>Blog</th><th>Status</th><th>SEO</th><th>Updated</th><th></th></tr></thead><tbody></tbody></table>`);
+    <th></th><th>Title</th><th>Blog</th><th>Status</th><th>SEO</th><th>Updated</th><th></th></tr></thead><tbody></tbody></table>`);
   const tbody = table.querySelector('tbody');
   for (const p of state.posts) {
     const blogName = (state.blogs.find((b) => String(b.id) === String(p.blogId)) || {}).name || p.blogId;
     const seo = p.seoJson ? JSON.parse(p.seoJson).score : null;
     const tr = el(`<tr>
+      <td onclick="event.stopPropagation()"><input type="checkbox" class="rowpick" value="${esc(p.id)}" title="Select for batch publish" /></td>
       <td>${esc(p.title || '(untitled)')}</td><td>${esc(blogName)}</td>
       <td><span class="status ${esc(p.status)}">${esc(p.status.replace('_', ' '))}</span></td>
       <td>${seo === null ? '-' : seo + '/100'}</td>
@@ -170,7 +175,93 @@ function renderDashboard() {
     tbody.appendChild(tr);
   }
   postWrap.appendChild(table);
+  const batchBtn = document.getElementById('batch-publish');
+  const refreshBatchBtn = () => {
+    const n = table.querySelectorAll('.rowpick:checked').length;
+    batchBtn.style.display = n ? '' : 'none';
+    batchBtn.textContent = n > 1 ? `Publish ${n} selected` : 'Publish selected';
+  };
+  table.querySelectorAll('.rowpick').forEach((cb) => { cb.onchange = refreshBatchBtn; });
+  batchBtn.onclick = async () => {
+    const ids = [...table.querySelectorAll('.rowpick:checked')].map((cb) => cb.value);
+    if (!ids.length) return;
+    batchBtn.disabled = true;
+    try {
+      const r = await api('/posts/batch/publish', { method: 'POST', body: { ids } });
+      const okCount = r.results.filter((x) => x.ok).length;
+      toast(r.ok ? `Published ${okCount} post${okCount === 1 ? '' : 's'}` : `Published ${okCount}/${ids.length} - check failures`);
+    } catch (e) { toast(`Batch publish failed: ${e.message}`); }
+    loadDashboard();
+  };
   loadTemplates();
+  loadRefreshQueue();
+  loadTraffic();
+}
+
+// Content refresh queue: AI citations decay in about a month - old live posts
+// get flagged here, and one click re-publishes (fresh sitemap hint + new date).
+async function loadRefreshQueue() {
+  const wrap = document.getElementById('refresh');
+  if (!wrap) return;
+  try {
+    const data = await api('/refresh-queue');
+    if (!data.items.length) {
+      wrap.innerHTML = `<div class="empty">Nothing stale. Live posts older than ${data.refreshAfterDays} days without an update will appear here - freshness is the one signal AI engines and Google both reward.</div>`;
+      return;
+    }
+    const table = el(`<table class="post-table"><thead><tr>
+      <th>Post</th><th>Stale for</th><th></th></tr></thead><tbody></tbody></table>`);
+    const tbody = table.querySelector('tbody');
+    for (const p of data.items) {
+      const tr = el(`<tr>
+        <td>${esc(p.title || '(untitled)')}</td>
+        <td><span class="status scheduled">${p.daysSinceUpdate} days</span></td>
+        <td style="white-space:nowrap"><button class="btn-primary">Refresh now</button> <button class="btn-ghost">Open</button></td></tr>`);
+      const [refreshBtn, openBtn] = tr.querySelectorAll('button');
+      refreshBtn.onclick = async () => {
+        refreshBtn.disabled = true;
+        try {
+          await api(`/posts/${p.id}/publish`, { method: 'POST', body: { mode: 'publish' } });
+          toast(`Refreshed: ${p.title || 'post'} re-published with a fresh date`);
+        } catch (e) { toast(`Refresh failed: ${e.message}`); }
+        loadDashboard();
+      };
+      openBtn.onclick = () => openEditor(p.id);
+      tbody.appendChild(tr);
+    }
+    wrap.innerHTML = '';
+    wrap.appendChild(table);
+  } catch { wrap.innerHTML = '<div class="empty">Could not load the refresh queue.</div>'; }
+}
+
+// Search traffic: observed Search Console performance matched to posts.
+async function loadTraffic() {
+  const wrap = document.getElementById('traffic');
+  if (!wrap) return;
+  const blocks = [];
+  for (const b of state.blogs) {
+    try {
+      const data = await api(`/searchconsole/${b.id}/performance`);
+      if (!data.items.length) continue;
+      blocks.push({ blog: b, items: data.items });
+    } catch { /* blog without SC access is skipped */ }
+  }
+  if (!blocks.length) {
+    wrap.innerHTML = '<div class="empty">Publish a post and its real clicks, impressions and average position will appear here (observed Search Console data).</div>';
+    return;
+  }
+  wrap.innerHTML = '';
+  for (const { blog, items } of blocks) {
+    const table = el(`<table class="post-table" style="margin-bottom:1rem"><thead><tr>
+      <th>${esc(blog.name || 'Blog')}</th><th>Clicks</th><th>Impressions</th><th>CTR</th><th>Avg position</th></tr></thead><tbody></tbody></table>`);
+    const tbody = table.querySelector('tbody');
+    for (const it of items.slice(0, 10)) {
+      tbody.appendChild(el(`<tr>
+        <td>${esc(it.title)}</td><td>${it.clicks}</td><td>${it.impressions}</td>
+        <td>${it.ctr}%</td><td>${it.position === null ? '-' : it.position}</td></tr>`));
+    }
+    wrap.appendChild(table);
+  }
 }
 
 async function loadTemplates() {
@@ -202,7 +293,7 @@ async function loadTemplates() {
 async function showLlmsTxt(blog) {
   const modal = el(`<div class="modal-backdrop"><div class="modal">
     <h3>llms.txt - ${esc(blog.name || 'blog')}</h3>
-    <p class="hint">A file that tells AI crawlers (ChatGPT, Gemini, Claude, Perplexity) what this blog covers and which posts to cite. Generated live from your published posts. Blogger can't host root files, so serve it from wherever Blogsmith is deployed, or paste it into any static host.</p>
+    <p class="hint">A standard file that describes this blog to AI crawlers (ChatGPT, Gemini, Claude, Perplexity), generated live from your published posts. Honest expectation: studies find most llms.txt files get few or no crawler requests yet - treat it as a free maybe, not a traffic driver. Blogger can't host root files, so serve it from wherever Blogsmith is deployed, or paste it into any static host.</p>
     <pre style="white-space:pre-wrap" id="llms-body">Loading...</pre>
     <div class="row">
       <button class="btn-ghost" id="llms-copy">Copy</button>
@@ -283,6 +374,7 @@ async function openEditor(id) {
         <div class="section-title" style="margin-top:1rem">Keyword ideas</div>
         <button class="btn-ghost" id="kw-ideas" style="width:100%">Get ideas for focus keyword</button>
         <button class="btn-ghost" id="kw-research" style="width:100%;margin-top:0.4rem">Deep research (scored, slower)</button>
+        <button class="btn-ghost" id="kw-questions" style="width:100%;margin-top:0.4rem">Find questions people ask</button>
         <div id="kw-list"></div>
       </div>
     </div>`;
@@ -335,6 +427,7 @@ async function openEditor(id) {
   document.getElementById('repurpose').onclick = repurposeModal;
   document.getElementById('kw-ideas').onclick = keywordIdeas;
   document.getElementById('kw-research').onclick = keywordResearch;
+  document.getElementById('kw-questions').onclick = questionIdeas;
 
   analyze();
 }
@@ -484,6 +577,32 @@ async function keywordIdeas() {
   } catch (e) { list.innerHTML = `<div class="hint" style="padding:0.4rem 0">Keyword provider error: ${esc(e.message)}</div>`; }
 }
 
+// Question mining: the exact phrasing people ask Google and AI engines, with a
+// coverage badge showing whether an existing post already answers it.
+async function questionIdeas() {
+  const seed = document.getElementById('f-keyword').value.trim() || document.getElementById('f-title').value.trim();
+  if (!seed) return toast('Set a focus keyword or title first');
+  const list = document.getElementById('kw-list');
+  list.innerHTML = '<div class="hint" style="padding:0.4rem 0">Mining question phrasing...</div>';
+  try {
+    const data = await api(`/keywords/questions?q=${encodeURIComponent(seed)}`);
+    if (!data.questions.length) { list.innerHTML = '<div class="hint" style="padding:0.4rem 0">No question phrasing found for that seed.</div>'; return; }
+    list.innerHTML = '';
+    for (const q of data.questions.slice(0, 15)) {
+      const covered = Boolean(q.coveredBy);
+      const item = el(`<div class="check" style="cursor:pointer"><span class="dot ${covered ? 'pass' : 'warn'}"></span>
+        <div><div class="label" style="font-weight:500">${esc(q.question)}</div>
+        <div class="detail">${covered ? `Covered by "${esc(q.coveredBy)}"` : 'No post answers this yet - strong candidate'}</div></div></div>`);
+      item.onclick = () => {
+        document.getElementById('f-keyword').value = q.question;
+        markDirty(); scheduleAnalyze();
+        toast(`Focus keyword set to "${q.question}"`);
+      };
+      list.appendChild(item);
+    }
+  } catch (e) { list.innerHTML = `<div class="hint" style="padding:0.4rem 0">Question mining failed: ${esc(e.message)}</div>`; }
+}
+
 async function keywordResearch() {
   const seed = document.getElementById('f-keyword').value.trim() || document.getElementById('f-title').value.trim();
   if (!seed) return toast('Set a focus keyword or title first');
@@ -513,7 +632,7 @@ async function qaSuggest() {
   if (!f.html || f.html.replace(/<[^>]+>/g, '').trim().split(/\s+/).length < 30) return toast('Write a bit more body text first');
   const modal = el(`<div class="modal-backdrop"><div class="modal">
     <h3>Q&amp;A block - how readers ask AI</h3>
-    <p class="hint">Question-and-answer pairs written from your own sections, phrased the way people ask ChatGPT and Gemini. Inserted as visible content (no FAQ schema - Google retired it). AI engines quote clear Q&amp;A pairs like these.</p>
+    <p class="hint">Question-and-answer pairs written from your own sections, phrased the way people ask ChatGPT and Gemini. Inserted as visible content (no FAQ schema - Google retired it). Readers and featured snippets benefit directly; recent studies are mixed on whether Q&amp;A blocks earn AI citations, so write them for readers first.</p>
     <div id="qa-list"><div class="hint" style="padding:0.4rem 0">Thinking...</div></div>
     <div class="row">
       <button class="btn-primary" id="qa-insert" disabled>Insert at end of post</button>
