@@ -15,15 +15,17 @@ not inject footer/spam links (that's one of the failure modes this platform fixe
 
 ## 2. Keyword providers (Phase 3)
 
-`server/keywords/provider.js` owns `suggestKeywords(seed) -> [{ keyword, source, score? }]`.
-The working implementation uses Google Autocomplete (free, no key). To add
-low-competition scoring: write a provider module that enriches each keyword with
-`score` (0-100 difficulty, lower = easier) and optionally `volume`, register it in
-`provider.js`, and surface it - `GET /api/keywords/suggest?q=` already returns
-whatever the providers emit, and the editor's keyword-ideas panel renders any extra
-fields. Free data sources only (Google Trends explore endpoints, autocomplete,
-public datasets); anything needing a paid API key goes in the README's paid-services
-table instead.
+`server/keywords/provider.js` owns two paths:
+- `suggestKeywords(seed) -> [{ keyword, source }]` - fast autocomplete ideas for the editor panel.
+- `researchKeywords(seed) -> [{ keyword, source, score, reasons }]` - deep, scored research,
+  implemented by `blogger-growth-modules/src/keywordFinder.mjs` (wide fan-out + low-competition
+  heuristics + Trends momentum). `score` is an OPPORTUNITY score, 0-100, higher = better target
+  for a low-authority domain; `reasons` explains it.
+Routes: `GET /api/keywords/suggest?q=` and `GET /api/keywords/research?q=`. The editor renders
+both; clicking a result sets the focus keyword. Free data sources only (autocomplete endpoints,
+Trends trending-RSS, public datasets); anything needing a paid API key belongs in the README's
+paid-services table instead. The growth modules folder stays self-contained (own tests, ESM,
+no dependencies) - `repurposePost(post)` there is the post-publish social hook.
 
 ## 3. Internal links & distribution (Phase 2/3)
 

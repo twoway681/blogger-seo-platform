@@ -1,0 +1,10 @@
+{
+  "name": "blogger-growth-modules",
+  "version": "0.1.0",
+  "description": "Phase 2/3 groundwork for the Blogger SEO platform: low-competition keyword finder, social repurposing, featured blogs directory spec. Zero paid APIs.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "demo": "node demo.mjs"
+  }
+}

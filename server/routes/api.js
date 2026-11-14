@@ -8,7 +8,7 @@ const { requireAuth, saveTokens, newId } = require('./auth');
 const { analyzePost } = require('../seo/analyzer');
 const { composePostPayload } = require('../seo/compose');
 const { processImage } = require('../images/pipeline');
-const { suggestKeywords } = require('../keywords/provider');
+const { suggestKeywords, researchKeywords } = require('../keywords/provider');
 const { suggestInternalLinks } = require('../links/suggest');
 const fs = require('fs');
 const path = require('path');
@@ -201,6 +201,18 @@ router.get('/keywords/suggest', requireAuth, async (req, res) => {
     if (!seed) return res.json({ seed, suggestions: [] });
     const suggestions = await suggestKeywords(seed);
     res.json({ seed, suggestions: suggestions.slice(0, 30) });
+  } catch (err) {
+    res.status(502).json({ error: 'keyword_provider_error', message: err.message });
+  }
+});
+
+// Deep keyword research: scored long-tail opportunities (slower, wide fan-out).
+router.get('/keywords/research', requireAuth, async (req, res) => {
+  try {
+    const seed = String(req.query.q || '').trim();
+    if (!seed) return res.json({ seed, results: [] });
+    const results = await researchKeywords(seed);
+    res.json({ seed, results: results.slice(0, 50) });
   } catch (err) {
     res.status(502).json({ error: 'keyword_provider_error', message: err.message });
   }

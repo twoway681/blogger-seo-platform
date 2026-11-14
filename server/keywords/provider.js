@@ -49,4 +49,22 @@ async function suggestKeywords(seed, { fetchImpl = fetch, expansions = EXPANSION
   return out;
 }
 
-module.exports = { suggestKeywords };
+// Deep research path: the blogger-growth-modules keyword finder (ESM) runs a wide
+// fan-out (50+ modified queries), dedupes across sources, and scores each result
+// for opportunity (0-100, HIGHER = better target for a low-authority domain) with
+// human-readable reasons. Slower than suggestKeywords - used by /api/keywords/research.
+let finderPromise = null;
+function loadFinder() {
+  if (!finderPromise) finderPromise = import('../../blogger-growth-modules/src/keywordFinder.mjs');
+  return finderPromise;
+}
+
+async function researchKeywords(seed, opts = {}) {
+  const clean = String(seed || '').trim();
+  if (!clean) return [];
+  const { findKeywords } = await loadFinder();
+  const results = await findKeywords(clean, opts);
+  return results.map((r) => ({ keyword: r.keyword, source: 'keyword-finder', score: r.score, reasons: r.reasons }));
+}
+
+module.exports = { suggestKeywords, researchKeywords };

@@ -116,7 +116,7 @@ Blogger's own future-publish).
 
 See `docs/MODULES.md`. In short:
 - **Templates**: drop XML + manifest entry into `templates/` -> appears in the dashboard with download + install guide (`GET /api/templates`).
-- **Keyword providers**: extend `server/keywords/provider.js` (working free Google Autocomplete implementation included) -> `GET /api/keywords/suggest` + editor "Keyword ideas" panel.
+- **Keyword providers**: `server/keywords/provider.js` (fast autocomplete ideas + deep scored research) -> `GET /api/keywords/suggest`, `GET /api/keywords/research` + editor "Keyword ideas" panel. The deep path is implemented by `blogger-growth-modules/` (merged from the parallel work stream: keyword finder with low-competition scoring, social repurposing templates for Pinterest/X/LinkedIn, Featured Blogs Directory spec - see its README and specs).
 - **Internal links / distribution**: `server/links/suggest.js` + `POST /api/links/suggest` already rank older posts from the Blogger post-list API; social modules consume the local `posts` table after publish.
 
 ## What's left (blueprint roadmap)

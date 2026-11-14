@@ -23800,6 +23800,7 @@ ${prefix}
         <div id="seo-checks"></div>
         <div class="section-title" style="margin-top:1rem">Keyword ideas</div>
         <button class="btn-ghost" id="kw-ideas" style="width:100%">Get ideas for focus keyword</button>
+        <button class="btn-ghost" id="kw-research" style="width:100%;margin-top:0.4rem">Deep research (scored, slower)</button>
         <div id="kw-list"></div>
       </div>
     </div>`;
@@ -23855,6 +23856,7 @@ ${prefix}
     document.getElementById("view-payload").onclick = showPayload;
     document.getElementById("suggest-links").onclick = suggestLinks;
     document.getElementById("kw-ideas").onclick = keywordIdeas;
+    document.getElementById("kw-research").onclick = keywordResearch;
     analyze();
   }
   function buildToolbar() {
@@ -23976,7 +23978,7 @@ ${prefix}
       for (const s of data.suggestions.slice(0, 12)) {
         const item = el(`<div class="check" style="cursor:pointer"><span class="dot pass"></span>
         <div><div class="label" style="font-weight:500">${esc(s.keyword)}</div>
-        <div class="detail">${esc(s.source)}${s.score != null ? " - difficulty " + s.score : ""}</div></div></div>`);
+        <div class="detail">${esc(s.source)}${s.score != null ? " - opportunity " + s.score + "/100" : ""}</div></div></div>`);
         item.onclick = () => {
           document.getElementById("f-keyword").value = s.keyword;
           markDirty();
@@ -23987,6 +23989,35 @@ ${prefix}
       }
     } catch (e) {
       list.innerHTML = `<div class="hint" style="padding:0.4rem 0">Keyword provider error: ${esc(e.message)}</div>`;
+    }
+  }
+  async function keywordResearch() {
+    const seed = document.getElementById("f-keyword").value.trim() || document.getElementById("f-title").value.trim();
+    if (!seed) return toast("Set a focus keyword or title first");
+    const list = document.getElementById("kw-list");
+    list.innerHTML = '<div class="hint" style="padding:0.4rem 0">Researching across ~50 query variations - takes up to a minute...</div>';
+    try {
+      const data = await api(`/keywords/research?q=${encodeURIComponent(seed)}`);
+      if (!data.results.length) {
+        list.innerHTML = '<div class="hint" style="padding:0.4rem 0">No opportunities found for that seed.</div>';
+        return;
+      }
+      list.innerHTML = "";
+      for (const r of data.results.slice(0, 15)) {
+        const color = r.score >= 60 ? "pass" : r.score >= 35 ? "warn" : "fail";
+        const item = el(`<div class="check" style="cursor:pointer"><span class="dot ${color}"></span>
+        <div><div class="label" style="font-weight:500">${esc(r.keyword)} <span class="hint">(${r.score})</span></div>
+        <div class="detail">${esc((r.reasons || []).slice(0, 2).join("; "))}</div></div></div>`);
+        item.onclick = () => {
+          document.getElementById("f-keyword").value = r.keyword;
+          markDirty();
+          scheduleAnalyze();
+          toast(`Focus keyword set to "${r.keyword}"`);
+        };
+        list.appendChild(item);
+      }
+    } catch (e) {
+      list.innerHTML = `<div class="hint" style="padding:0.4rem 0">Research failed: ${esc(e.message)}</div>`;
     }
   }
   async function suggestLinks() {
